@@ -2,6 +2,13 @@ import requests
 import plotly.io as pio
 from io import BytesIO
 
+def send_message_telegram(symbol, alarm_name):
+    message = (
+        f"ALARM!! SYMBOL: {symbol}\n"
+        f"Alarm Name: {alarm_name}"
+    )
+    send_to_telegram(message, None)
+
 def send_telegram(symbol, alarm_name, initial_candle_close, reversal_candle_close, approve_candle_close, interval, photo):
     """
     Sends an alarm message to Telegram with the provided details.

@@ -12,6 +12,9 @@ from tvDatafeed import Interval
 
 #client = Client()
 
+ema_columns = ['EMA20', 'EMA50', 'EMA100', 'EMA200']
+CANDLE_INDICES = {'approve': -1, 'reversal': -2, 'initial': -3}
+
 def get_crypto_symbols(client, exclude_keywords=None, base_currency='USDT'):
     exclude_keywords = exclude_keywords or ['UP', 'DOWN', 'BEAR', 'BULL']
     info = client.get_exchange_info()
@@ -236,19 +239,52 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
     if type == 'crypto' and isinstance(relevant, list):
         for r in tqdm(relevant):
             df = getdata.get_data_frame(r, kline_interval, lookback, interval_str)
-            do_analysis(r, df, interval)
+            do_analysis(r, df, interval, None)
 
     if type == 'stock' and isinstance(relevant, dict):
         for exchange, symbols in relevant.items():
-            for symbol in tqdm(symbols):
-                df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
-                do_analysis(symbol, df, interval)
+
+            if exchange == 'BIST':
+                index_symbol = 'XU100'
+                index_exchange = 'BIST'
+            elif exchange == 'XETR':
+                index_symbol = 'DAX'
+                index_exchange = 'XETR'
+            elif exchange == 'NYSE':
+                index_symbol = 'SPX'
+                index_exchange = 'SP'
+            elif exchange == 'NASDAQ':
+                index_symbol = 'NDX'
+                index_exchange = 'NASDAQ'
+
+            index_df = getdata_stock.get_data_frame(index_symbol, index_exchange, kline_interval, lookback)
+            index_df = add_indicators(index_df)
+            approve_idx, reversal_idx, initial_idx = CANDLE_INDICES.values()
+            long_ema_check = all(index_df[ema_columns[i]].iloc[approve_idx] > index_df[ema_columns[i + 1]].iloc[approve_idx]
+                            for i in range(len(ema_columns) - 1))
+            short_ema_check = all(index_df[ema_columns[i]].iloc[approve_idx] < index_df[ema_columns[i + 1]].iloc[approve_idx]
+                            for i in range(len(ema_columns) - 1))
+
+            if long_ema_check:
+                index_long = True
+            elif short_ema_check:
+                index_long = False
+            else:
+                index_long = None
+            if index_long != None:
+                for symbol in tqdm(symbols):
+                    df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
+                    do_analysis(symbol, df, interval, index_long)
+            else:
+                print('Index: '+ index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
+                sendtotelegram.send_message_telegram(
+                    index_symbol + '-' + index_exchange,
+                    'INDEX SKIPPED'
+                )
 
     print('finished')
 
-def do_analysis(symbol, df, interval):
-    CANDLE_INDICES = {'approve': -1, 'reversal': -2, 'initial': -3}
-
+def do_analysis(symbol, df, interval, index_long):
     if df.empty:
         print("DataFrame is empty. Exiting analysis.")
         return
@@ -269,12 +305,11 @@ def do_analysis(symbol, df, interval):
     if df.iloc[-1]['Bullish_Divergence'] > 0:
         print('Bullish_Divergence, symbol: ' + df.iloc[-1]['symbol'])
 
-    ema_columns = ['EMA20', 'EMA50', 'EMA100', 'EMA200']
     long_condition, short_condition = get_trade_conditions(df, CANDLE_INDICES, ema_columns)
 
-    if long_condition:
+    if long_condition and index_long:
         execute_long_positions(df, interval, symbol, ema_columns, CANDLE_INDICES)
-    elif short_condition:
+    elif short_condition and not index_long:
         execute_short_positions(df, interval, symbol, ema_columns, CANDLE_INDICES)
 
 def add_indicators(df):
@@ -312,14 +347,16 @@ def add_candlestick_patterns(df):
 
 def get_trade_conditions(df, indices, ema_columns):
     approve_idx, reversal_idx, initial_idx = indices.values()
-    ema_check = all(df[ema_columns[i]].iloc[approve_idx] > df[ema_columns[i + 1]].iloc[approve_idx]
+    long_ema_check = all(df[ema_columns[i]].iloc[approve_idx] > df[ema_columns[i + 1]].iloc[approve_idx]
+                    for i in range(len(ema_columns) - 1))
+    short_ema_check = all(df[ema_columns[i]].iloc[approve_idx] < df[ema_columns[i + 1]].iloc[approve_idx]
                     for i in range(len(ema_columns) - 1))
 
     long_condition = (
         (df['STOCH_K'].iloc[approve_idx] < 40 or df['STOCH_D'].iloc[approve_idx] < 40) and
         df['STOCH_K'].iloc[approve_idx] > df['STOCH_D'].iloc[approve_idx] and
         any(df['MACD'].iloc[idx] > df['MACD_S'].iloc[idx] for idx in [approve_idx, reversal_idx, initial_idx]) and
-        ema_check and
+        long_ema_check and
         df['Close'].iloc[initial_idx] < df['Open'].iloc[initial_idx] and
         df['Low'].iloc[approve_idx] > df['Low'].iloc[reversal_idx] and
         df['Close'].iloc[approve_idx] > df['High'].iloc[reversal_idx]
@@ -328,7 +365,7 @@ def get_trade_conditions(df, indices, ema_columns):
     short_condition = (
         (df['STOCH_K'].iloc[approve_idx] > 65 or df['STOCH_D'].iloc[approve_idx] > 65) and
         any(df['MACD'].iloc[idx] < df['MACD_S'].iloc[idx] for idx in [approve_idx, reversal_idx, initial_idx]) and
-        not ema_check and
+        short_ema_check and
         df['Low'].iloc[reversal_idx] > df['Close'].iloc[approve_idx] and
         df['High'].iloc[reversal_idx] > df['High'].iloc[approve_idx]
     )
@@ -405,6 +442,6 @@ def run_analysis(type):
             analsysed_periods.append(four_hour_analsys_key)
 
 if __name__ == "__main__":
-    for type in ['stock', 'crypto']:
+    for type in ['stock']:
         run_analysis(type)
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} Finished")
