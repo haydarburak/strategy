@@ -23,5 +23,8 @@ jobs:
         run: |
           pip install -r requirements.txt || true  # Ignore if no requirements
 
+      - name: Set up environment variables
+        run: echo "SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" >> $GITHUB_ENV
+
       - name: Run Python Script
         run: python main.py
