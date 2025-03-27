@@ -3,14 +3,14 @@ import getdata_stock
 import indicator
 import creategraphics
 import divergence
-from binance.client import Client
+#from binance.client import Client
 from candlestick import candlestick
 from tqdm import tqdm
 from notification import sendtotelegram
 from datetime import datetime
 from tvDatafeed import Interval
 
-client = Client()
+#client = Client()
 
 def get_crypto_symbols(client, exclude_keywords=None, base_currency='USDT'):
     exclude_keywords = exclude_keywords or ['UP', 'DOWN', 'BEAR', 'BULL']
@@ -22,12 +22,12 @@ def get_crypto_symbols(client, exclude_keywords=None, base_currency='USDT'):
     ]
 
 def get_symbols(type_, target_symbols=None):
-    if type_ == 'crypto':
-        if not client:
-            raise ValueError("Client is required for fetching crypto symbols.")
-        return get_crypto_symbols(client)
+#    if type_ == 'crypto':
+#        if not client:
+#            raise ValueError("Client is required for fetching crypto symbols.")
+#        return get_crypto_symbols(client)
 
-    elif type_ == 'stock':
+    if type_ == 'stock':
         return getdata_stock.get_stock_symbols(target_symbols)
 
     raise ValueError(f"Unsupported symbol type: {type_}")
@@ -379,16 +379,16 @@ def run_analysis(type):
 
             if type == 'stock':
                 analsys(type, '1D', Interval.in_daily, 'day', 500   , symbollist)
-            elif type == 'crypto':
-                analsys(type, '1D', Client.KLINE_INTERVAL_1DAY, 'day', '500', symbollist)
+#            elif type == 'crypto':
+#                analsys(type, '1D', Client.KLINE_INTERVAL_1DAY, 'day', '500', symbollist)
 
             analsysed_periods.append(one_day_analsys_key)
 
         if not one_hour_analsys_key in analsysed_periods:
             print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {type} - {one_hour_analsys_key} Started")
 
-            if type == 'crypto':
-                analsys(type, '1H', Client.KLINE_INTERVAL_1HOUR, 'hour', '500', symbollist)
+#            if type == 'crypto':
+#                analsys(type, '1H', Client.KLINE_INTERVAL_1HOUR, 'hour', '500', symbollist)
 #            elif type == 'stock':
 #                analsys(type, '1H', Interval.in_1_hour, 'hour', 500, symbollist)
 
@@ -397,8 +397,8 @@ def run_analysis(type):
         if not four_hour_analsys_key in analsysed_periods and is_four_hour_closed():
             print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {type} - {four_hour_analsys_key} Started")
 
-            if type == 'crypto':
-                analsys(type, '4H', Client.KLINE_INTERVAL_4HOUR, 'hour', '500', symbollist)
+#            if type == 'crypto':
+#                analsys(type, '4H', Client.KLINE_INTERVAL_4HOUR, 'hour', '500', symbollist)
 #            elif type == 'stock':
 #                analsys(type, '4H', Interval.in_4_hour, 'hour', 500, symbollist)
 
