@@ -1,16 +1,17 @@
 import configparser
 import pandas as pd
-from binance.client import Client
+#from binance.client import Client
 
-config = configparser.RawConfigParser()
-config.read('config/Config.properties')
-API_KEY = config.get('BINANCE', 'binance.apikey')
-API_SECRET = config.get('BINANCE', 'binance.secret')
+#config = configparser.RawConfigParser()
+#config.read('config/Config.properties')
+#API_KEY = config.get('BINANCE', 'binance.apikey')
+#API_SECRET = config.get('BINANCE', 'binance.secret')
 
-client = Client(API_KEY, API_SECRET, {"timeout": 20})
+#client = Client(API_KEY, API_SECRET, {"timeout": 20})
 
 def get_data_frame(symbol, interval, lookback, interval_type):
-    frame = pd.DataFrame(client.get_historical_klines(symbol, interval, lookback + ' ' + interval_type + ' ' + 'ago UTC'))
+#    frame = pd.DataFrame(client.get_historical_klines(symbol, interval, lookback + ' ' + interval_type + ' ' + 'ago UTC'))
+    frame = {}
     if (frame.empty):
         return frame
     frame = frame.iloc[:, :6]
