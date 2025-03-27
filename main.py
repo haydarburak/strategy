@@ -290,7 +290,6 @@ def do_analysis(symbol, df, interval, index_long):
         return
 
     exchange_and_symbol = df.get('symbol', [symbol]).iloc[0] if 'symbol' in df else symbol
-    print(f'Symbol: {exchange_and_symbol}, df len: {len(df)}')
 
     df = df.dropna()
     df = add_indicators(df)
@@ -330,7 +329,6 @@ def validate_columns(df):
     required_columns = ['STOCH_K', 'STOCH_D', 'MACD', 'MACD_S', 'EMA20', 'EMA50', 'EMA100', 'EMA200']
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
-        print(f"Warning: Missing columns: {', '.join(missing_columns)}")
         return False
     return True
 
