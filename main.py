@@ -291,7 +291,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                         HOLDING_STOCKS = os.getenv("HOLDING_STOCKS", "")
                         stock_list = HOLDING_STOCKS.split(",") if HOLDING_STOCKS else []
 
-                        print('HOLDING_STOCKS:' + stock_list)
+                        print('HOLDING_STOCKS:' + HOLDING_STOCKS)
 
                         if exchange_and_symbol in stock_list:
                             df = divergence.find_rsi_divergence(df)
