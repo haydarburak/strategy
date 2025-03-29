@@ -277,6 +277,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             else:
                 index_long = None
             if index_long != None or exchange == 'NASDAQ':
+                print('Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is started')
+
                 for symbol in tqdm(symbols):
                     rsi_divergence_message = ""
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
@@ -298,8 +300,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             if message:
                                 rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
             else:
-                print(
-                    'Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
+                print('Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
                 sendtotelegram.send_message_telegram(
                     index_symbol + '-' + index_exchange,
                     'INDEX SKIPPED'
