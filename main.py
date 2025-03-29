@@ -281,7 +281,6 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 print('Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is started')
 
                 for symbol in tqdm(symbols):
-                    rsi_divergence_message = ""
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
                     df = do_analysis(symbol, df, interval, index_long)
                     if df is not None:
@@ -296,7 +295,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             "NASDAQ:GOOGL", "NYSE:VFC", "XETR:PFE", "NYSE:SLB", "XETR:ASME",
                             "NASDAQ:ACLS", "XETR:BAYN", "XETR:VOW", "NYSE:EL", "XETR:M3P"
                         ]
-                        if exchange_and_symbol == 'NASDAQ:GOOGL':
+
+                        if exchange_and_symbol in holding_stocks:
 
                             df = divergence.find_rsi_divergence(df)
                             if df.iloc[-1]['Bearish_Divergence'] > 0:
@@ -308,9 +308,12 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                                 message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
                                 print("message: " + message)
 
-
                             if message:
                                 rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
+
+                if rsi_divergence_message:
+                    sendtotelegram.send_message_telegram(rsi_divergence_message, 'RSI DIVERGENCE FOR STOCKS')
+
             else:
                 print('Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
                 sendtotelegram.send_message_telegram(
@@ -318,8 +321,6 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     'INDEX SKIPPED'
                 )
 
-        if rsi_divergence_message:
-            sendtotelegram.send_message_telegram(rsi_divergence_message, 'RSI DIVERGENCE FOR STOCKS')
 
     print('finished')
 
