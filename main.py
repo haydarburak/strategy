@@ -1,3 +1,5 @@
+import os
+
 import getdata
 import getdata_stock
 import indicator
@@ -242,6 +244,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             do_analysis(r, df, interval, None)
 
     if type == 'stock' and isinstance(relevant, dict):
+        rsi_divergence_message = ""
+
         for exchange, symbols in relevant.items():
 
             if exchange == 'BIST':
@@ -274,7 +278,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             if index_long != None:
                 for symbol in tqdm(symbols):
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
-                    do_analysis(symbol, df, interval, index_long)
+                    message = do_analysis(symbol, df, interval, index_long)
+                    rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
             else:
                 print('Index: '+ index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
                 sendtotelegram.send_message_telegram(
@@ -282,9 +287,14 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     'INDEX SKIPPED'
                 )
 
+    if rsi_divergence_message:
+        sendtotelegram.send_message_telegram(rsi_divergence_message, 'RSI DIVERGENCE FOR STOCKS')
+
     print('finished')
 
 def do_analysis(symbol, df, interval, index_long):
+    rsi_divergence_message = ""
+
     if df.empty:
         print("DataFrame is empty. Exiting analysis.")
         return
@@ -298,11 +308,15 @@ def do_analysis(symbol, df, interval, index_long):
 
     df = add_candlestick_patterns(df)
 
-    df = divergence.find_rsi_divergence(df)
-    if df.iloc[-1]['Bearish_Divergence'] > 0:
-        print('Bearish_Divergence, symbol: ' + df.iloc[-1]['symbol'])
-    if df.iloc[-1]['Bullish_Divergence'] > 0:
-        print('Bullish_Divergence, symbol: ' + df.iloc[-1]['symbol'])
+    HOLDING_STOCKS = os.getenv("HOLDING_STOCKS", "")
+    stock_list = HOLDING_STOCKS.split(",") if HOLDING_STOCKS else []
+
+    if exchange_and_symbol in stock_list:
+        df = divergence.find_rsi_divergence(df)
+        if df.iloc[-1]['Bearish_Divergence'] > 0:
+            rsi_divergence_message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+        if df.iloc[-1]['Bullish_Divergence'] > 0:
+            rsi_divergence_message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
 
     long_condition, short_condition = get_trade_conditions(df, CANDLE_INDICES, ema_columns)
 
@@ -310,6 +324,8 @@ def do_analysis(symbol, df, interval, index_long):
         execute_long_positions(df, interval, symbol, ema_columns, CANDLE_INDICES)
     elif short_condition and not index_long:
         execute_short_positions(df, interval, symbol, ema_columns, CANDLE_INDICES)
+
+    return rsi_divergence_message
 
 def add_indicators(df):
     indicators_to_add = [
