@@ -277,6 +277,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 index_long = None
             if index_long != None:
                 for symbol in tqdm(symbols):
+                    print("Stock: " + symbol + " Exchange:" + exchange)
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
                     message = do_analysis(symbol, df, interval, index_long)
                     rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
