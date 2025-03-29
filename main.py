@@ -300,12 +300,14 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
 
                             df = divergence.find_rsi_divergence(df)
                             if df.iloc[-1]['Bearish_Divergence'] > 0:
+                                print("GOOGLE Bearish_Divergence: " + str(df.iloc[-1]['Bearish_Divergence']))
                                 message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                                print("message: " + message)
                             if df.iloc[-1]['Bullish_Divergence'] > 0:
+                                print("GOOGLE Bullish_Divergence: " + str(df.iloc[-1]['Bullish_Divergence']))
                                 message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                                print("message: " + message)
 
-                            print("GOOGLE Bearish_Divergence: " + str(df.iloc[-1]['Bearish_Divergence']))
-                            print("GOOGLE Bullish_Divergence: " + str(df.iloc[-1]['Bullish_Divergence']))
 
                             if message:
                                 rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
