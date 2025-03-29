@@ -304,8 +304,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             if df.iloc[-1]['Bullish_Divergence'] > 0:
                                 message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
 
-                            print("GOOGLE Bearish_Divergence: " + df.iloc[-1]['Bearish_Divergence'])
-                            print("GOOGLE Bullish_Divergence: " + df.iloc[-1]['Bullish_Divergence'])
+                            print("GOOGLE Bearish_Divergence: " + str(df.iloc[-1]['Bearish_Divergence']))
+                            print("GOOGLE Bullish_Divergence: " + str(df.iloc[-1]['Bullish_Divergence']))
 
                             if message:
                                 rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
