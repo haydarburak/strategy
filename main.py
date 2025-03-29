@@ -245,6 +245,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
 
     if type == 'stock' and isinstance(relevant, dict):
         rsi_divergence_message = ""
+        message = ""
 
         for exchange, symbols in relevant.items():
 
@@ -277,26 +278,38 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 index_long = None
             if index_long != None:
                 for symbol in tqdm(symbols):
-                    print("Stock: " + symbol + " Exchange:" + exchange)
+                    rsi_divergence_message = ""
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
-                    message = do_analysis(symbol, df, interval, index_long)
+                    df = do_analysis(symbol, df, interval, index_long)
+                    exchange_and_symbol = df.get('symbol', [symbol]).iloc[0] if 'symbol' in df else symbol
+
+                    HOLDING_STOCKS = os.getenv("HOLDING_STOCKS", "")
+                    stock_list = HOLDING_STOCKS.split(",") if HOLDING_STOCKS else []
+
+                    if exchange_and_symbol in stock_list:
+                        df = divergence.find_rsi_divergence(df)
+
+                        if df.iloc[-1]['Bearish_Divergence'] > 0:
+                            message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                        if df.iloc[-1]['Bullish_Divergence'] > 0:
+                            message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+
                     if message:
                         rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
             else:
-                print('Index: '+ index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
+                print(
+                    'Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
                 sendtotelegram.send_message_telegram(
                     index_symbol + '-' + index_exchange,
                     'INDEX SKIPPED'
                 )
 
-    if rsi_divergence_message:
-        sendtotelegram.send_message_telegram(rsi_divergence_message, 'RSI DIVERGENCE FOR STOCKS')
+        if rsi_divergence_message:
+            sendtotelegram.send_message_telegram(rsi_divergence_message, 'RSI DIVERGENCE FOR STOCKS')
 
     print('finished')
 
 def do_analysis(symbol, df, interval, index_long):
-    rsi_divergence_message = ""
-
     if df.empty:
         print("DataFrame is empty. Exiting analysis.")
         return
@@ -310,16 +323,6 @@ def do_analysis(symbol, df, interval, index_long):
 
     df = add_candlestick_patterns(df)
 
-    HOLDING_STOCKS = os.getenv("HOLDING_STOCKS", "")
-    stock_list = HOLDING_STOCKS.split(",") if HOLDING_STOCKS else []
-
-    if exchange_and_symbol in stock_list:
-        df = divergence.find_rsi_divergence(df)
-        if df.iloc[-1]['Bearish_Divergence'] > 0:
-            rsi_divergence_message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
-        if df.iloc[-1]['Bullish_Divergence'] > 0:
-            rsi_divergence_message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
-
     long_condition, short_condition = get_trade_conditions(df, CANDLE_INDICES, ema_columns)
 
     if long_condition and index_long:
@@ -327,7 +330,7 @@ def do_analysis(symbol, df, interval, index_long):
     elif short_condition and not index_long:
         execute_short_positions(df, interval, symbol, ema_columns, CANDLE_INDICES)
 
-    return rsi_divergence_message
+    return df
 
 def add_indicators(df):
     indicators_to_add = [
