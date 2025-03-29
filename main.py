@@ -276,7 +276,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 index_long = False
             else:
                 index_long = None
-            if index_long != None:
+            if index_long != None or exchange == 'NASDAQ':
                 for symbol in tqdm(symbols):
                     rsi_divergence_message = ""
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
@@ -288,15 +288,15 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                         HOLDING_STOCKS = os.getenv("HOLDING_STOCKS", "")
                         stock_list = HOLDING_STOCKS.split(",") if HOLDING_STOCKS else []
 
-#                        if exchange_and_symbol in stock_list:
-                        df = divergence.find_rsi_divergence(df)
-                        if df.iloc[-1]['Bearish_Divergence'] > 0:
-                            message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
-                        if df.iloc[-1]['Bullish_Divergence'] > 0:
-                            message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                        if exchange_and_symbol in stock_list:
+                            df = divergence.find_rsi_divergence(df)
+                            if df.iloc[-1]['Bearish_Divergence'] > 0:
+                                message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                            if df.iloc[-1]['Bullish_Divergence'] > 0:
+                                message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
 
-                        if message:
-                            rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
+                            if message:
+                                rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
             else:
                 print(
                     'Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
