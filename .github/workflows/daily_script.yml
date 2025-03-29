@@ -27,7 +27,9 @@ jobs:
         run: pip list
 
       - name: Set up environment variables
-        run: echo "SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" >> $GITHUB_ENV
+        run: |
+          echo "SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" >> $GITHUB_ENV
+          echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
 
       - name: Run Python Script
         run: python main.py
