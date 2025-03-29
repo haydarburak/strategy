@@ -29,6 +29,8 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" >> $GITHUB_ENV
+          echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
+          echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
           echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
 
       - name: Run Python Script
