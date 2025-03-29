@@ -280,7 +280,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     print("Stock: " + symbol + " Exchange:" + exchange)
                     df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
                     message = do_analysis(symbol, df, interval, index_long)
-                    rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
+                    if message:
+                        rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
             else:
                 print('Index: '+ index_symbol + ' Index Exchange: ' + index_exchange + ' is neither Long nor Short. Skipped')
                 sendtotelegram.send_message_telegram(
