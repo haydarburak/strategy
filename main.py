@@ -307,7 +307,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             if message:
                                 rsi_divergence_message += f"{rsi_divergence_message}\n{message}"
 
-                            message = None
+                            message = ""
 
                 if rsi_divergence_message:
                     sendtotelegram.send_message_telegram(rsi_divergence_message, 'RSI DIVERGENCE FOR STOCKS')
