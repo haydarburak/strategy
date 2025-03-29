@@ -296,8 +296,11 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             "NASDAQ:GOOGL", "NYSE:VFC", "XETR:PFE", "NYSE:SLB", "XETR:ASME",
                             "NASDAQ:ACLS", "XETR:BAYN", "XETR:VOW", "NYSE:EL", "XETR:M3P"
                         ]
+                        if exchange_and_symbol == 'NASDAQ:GOOGL':
+                            print("google a girdi")
+                            if exchange_and_symbol in holding_stocks:
+                                print("holding stocks icine girdi")
 
-                        if exchange_and_symbol in holding_stocks:
                             df = divergence.find_rsi_divergence(df)
                             if df.iloc[-1]['Bearish_Divergence'] > 0:
                                 message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
