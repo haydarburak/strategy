@@ -1,3 +1,5 @@
+import os
+
 import requests
 import plotly.io as pio
 from io import BytesIO
@@ -36,8 +38,8 @@ def send_telegram(symbol, alarm_name, initial_candle_close, reversal_candle_clos
 
 def send_to_telegram(message, photo):
 
-    apiToken = '6697375999:AAHPGUfjvyA1qMjoDt-FuaFmbdckjnjfdCU'
-    chatID = '1137888697'
+    apiToken = os.getenv("TELEGRAM_BOT_TOKEN")
+    chatID = os.getenv("TELEGRAM_BOT_CHAT_ID")
     apiURL = f'https://api.telegram.org/bot{apiToken}/sendMessage'
     apiSendPhotoURL = f'https://api.telegram.org/bot{apiToken}/sendPhoto'
     try:
