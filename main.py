@@ -276,7 +276,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 index_long = False
             else:
                 index_long = None
-            if index_long != None or exchange == 'NASDAQ':
+#            if index_long != None:
+            if exchange == 'NASDAQ':
                 print('Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is started')
 
                 for symbol in tqdm(symbols):
