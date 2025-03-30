@@ -295,7 +295,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             "XETR:MBG", "XETR:BAS", "TRADEGATE:IU2", "NASDAQ:PSEC", "NYSE:TSM", "NASDAQ:NWL",
             "NYSE:MMM", "NYSE:BABA", "NYSE:TM", "NASDAQ:MSFT", "NASDAQ:INTC",
             "NASDAQ:GOOGL", "NYSE:VFC", "XETR:PFE", "NYSE:SLB", "XETR:ASME",
-            "NASDAQ:ACLS", "XETR:BAYN", "XETR:VOW", "NYSE:EL", "XETR:M3P"
+            "NASDAQ:ACLS", "XETR:BAYN", "XETR:VOW", "NYSE:EL", "TRADEGATE:M3P"
         ]
 
         print("Divergence analsys is starting")
