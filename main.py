@@ -292,7 +292,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
         holding_stocks = [
             "NASDAQ:AMD", "NASDAQ:PYPL", "XETR:ITB", "XETR:UNVB", "NYSE:O", "NYSE:T",
             "NYSE:ENB", "NYSE:BTI", "XETR:VIB3", "NYSE:VZ", "NYSE:MO", "NYSE:CVX",
-            "XETR:MBG", "XETR:BAS", "XETR:IU2", "NASDAQ:PSEC", "NYSE:TSM", "NASDAQ:NWL",
+            "XETR:MBG", "XETR:BAS", "TRADEGATE:IU2", "NASDAQ:PSEC", "NYSE:TSM", "NASDAQ:NWL",
             "NYSE:MMM", "NYSE:BABA", "NYSE:TM", "NASDAQ:MSFT", "NASDAQ:INTC",
             "NASDAQ:GOOGL", "NYSE:VFC", "XETR:PFE", "NYSE:SLB", "XETR:ASME",
             "NASDAQ:ACLS", "XETR:BAYN", "XETR:VOW", "NYSE:EL", "XETR:M3P"
