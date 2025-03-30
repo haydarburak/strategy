@@ -298,7 +298,9 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             "NASDAQ:ACLS", "XETR:BAYN", "XETR:VOW", "NYSE:EL", "XETR:M3P"
         ]
 
+        print("Divergence analsys is starting")
         for symbol in tqdm(holding_stocks):
+            print("SYMBOL: " + symbol)
             df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
 
             df = df.dropna()
