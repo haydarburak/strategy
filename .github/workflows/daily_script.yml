@@ -38,11 +38,9 @@ jobs:
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
           echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
-          echo "FIREBASE_CREDENTIALS_JSON=${{ secrets.FIREBASE_CREDENTIALS_JSON }}" >> $GITHUB_ENV
+      
           echo "${{ secrets.FIREBASE_CREDENTIALS_JSON_B64 }}" | base64 -d > firebase_credentials.json
-          echo "FIREBASE_CREDENTIALS_JSON=$(pwd)/firebase_credentials.json" >> $GITHUB_ENV
-
+          printf "FIREBASE_CREDENTIALS_JSON=%s\n" "$(pwd)/firebase_credentials.json" >> "$GITHUB_ENV"
+    
       - name: Run Python Script
         run: python main.py
-        env:
-          FIREBASE_CREDENTIALS_JSON: ${{ env.FIREBASE_CREDENTIALS_JSON }}
