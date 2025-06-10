@@ -1,5 +1,7 @@
 import os
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple, Union
+from numba import jit
 
 import getdata
 import getdata_stock
@@ -83,22 +85,23 @@ class TwoCandelReversalStrategy(TradingStrategy):
     
     def get_long_conditions(self, df, ema, indices):
         return (
-            df['Open'].iloc[indices['initial']] > df['Close'].iloc[indices['initial']] and
-            df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Low'].iloc[indices['initial']] > df['Low'].iloc[indices['reversal']]
-        )
+            (df['Open'].iloc[indices['initial']] > df['Close'].iloc[indices['initial']]) &
+            (df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Low'].iloc[indices['initial']] > df['Low'].iloc[indices['reversal']])
+        ).all()
     
     def get_short_conditions(self, df, ema, indices):
         return (
-            df['Close'].iloc[indices['initial']] > df['Open'].iloc[indices['initial']] and
-            df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['High'].iloc[indices['reversal']] > df['High'].iloc[indices['initial']]
-        )
+            (df['Close'].iloc[indices['initial']] > df['Open'].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['High'].iloc[indices['reversal']] > df['High'].iloc[indices['initial']])
+        ).all()
     
+    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if two-candle reversal conditions are met"""
         for ema in ema_length:
@@ -120,26 +123,27 @@ class DoubleTailPiercingStrategy(TradingStrategy):
     
     def get_long_conditions(self, df, ema, indices):
         return (
-            df['Low'].iloc[indices['initial']] < df['Low'].iloc[indices['reversal']] and
-            df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Low'].iloc[indices['initial']] < df[ema].iloc[indices['initial']] and
-            df['Open'].iloc[indices['initial']] > df[ema].iloc[indices['initial']] and
-            df['Close'].iloc[indices['initial']] > df[ema].iloc[indices['initial']]
-        )
+            (df['Low'].iloc[indices['initial']] < df['Low'].iloc[indices['reversal']]) &
+            (df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Low'].iloc[indices['initial']] < df[ema].iloc[indices['initial']]) &
+            (df['Open'].iloc[indices['initial']] > df[ema].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['initial']] > df[ema].iloc[indices['initial']])
+        ).all()
     
     def get_short_conditions(self, df, ema, indices):
         return (
-            df['Close'].iloc[indices['initial']] > df['Open'].iloc[indices['initial']] and
-            df['Open'].iloc[indices['initial']] < df[ema].iloc[indices['initial']] and
-            df['Close'].iloc[indices['initial']] < df[ema].iloc[indices['initial']] and
-            df['Open'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['High'].iloc[indices['initial']] > df[ema].iloc[indices['initial']] and
-            df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]
-        )
+            (df['Close'].iloc[indices['initial']] > df['Open'].iloc[indices['initial']]) &
+            (df['Open'].iloc[indices['initial']] < df[ema].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['initial']] < df[ema].iloc[indices['initial']]) &
+            (df['Open'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['High'].iloc[indices['initial']] > df[ema].iloc[indices['initial']]) &
+            (df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']])
+        ).all()
     
+    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if double tail piercing conditions are met"""
         for ema in ema_length:
@@ -161,27 +165,28 @@ class BodyPiercingStrategy(TradingStrategy):
     
     def get_long_conditions(self, df, ema, indices):
         return (
-            df['Low'].iloc[indices['initial']] > df['Low'].iloc[indices['reversal']] and
-            df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Low'].iloc[indices['initial']] < df[ema].iloc[indices['initial']] and
-            df['Open'].iloc[indices['initial']] > df[ema].iloc[indices['initial']] and
-            df['Close'].iloc[indices['initial']] < df[ema].iloc[indices['initial']]
-        )
+            (df['Low'].iloc[indices['initial']] > df['Low'].iloc[indices['reversal']]) &
+            (df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Low'].iloc[indices['initial']] < df[ema].iloc[indices['initial']]) &
+            (df['Open'].iloc[indices['initial']] > df[ema].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['initial']] < df[ema].iloc[indices['initial']])
+        ).all()
     
     def get_short_conditions(self, df, ema, indices):
         return (
-            df['Close'].iloc[indices['initial']] > df['Open'].iloc[indices['initial']] and
-            df['Close'].iloc[indices['reversal']] < df['Open'].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['initial']] > df[ema].iloc[indices['initial']] and
-            df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['initial']] < df[ema].iloc[indices['initial']] and
-            df['Close'].iloc[indices['initial']] > df[ema].iloc[indices['initial']] and
-            df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]
-        )
+            (df['Close'].iloc[indices['initial']] > df['Open'].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['reversal']] < df['Open'].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['initial']] > df[ema].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['initial']] < df[ema].iloc[indices['initial']]) &
+            (df['Close'].iloc[indices['initial']] > df[ema].iloc[indices['initial']]) &
+            (df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']])
+        ).all()
     
+    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if body piercing conditions are met"""
         for ema in ema_length:
@@ -203,22 +208,23 @@ class SingleCandleReversalStrategy(TradingStrategy):
     
     def get_long_conditions(self, df, ema, indices):
         return (
-            df['Low'].iloc[indices['initial']] > df['Low'].iloc[indices['reversal']] and
-            df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['approve']] > df['Close'].iloc[indices['reversal']] and
-            df['HAMMER'].iloc[indices['reversal']]
-        )
+            (df['Low'].iloc[indices['initial']] > df['Low'].iloc[indices['reversal']]) &
+            (df['Low'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['approve']] > df['Close'].iloc[indices['reversal']]) &
+            (df['HAMMER'].iloc[indices['reversal']])
+        ).all()
     
     def get_short_conditions(self, df, ema, indices):
         return (
-            (df['INVERTED_HAMMER'].iloc[indices['reversal']] or df['GRAVESTONE_DOJI'].iloc[indices['reversal']]) and
-            df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']] and
-            df['Open'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']] and
-            df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]
-        )
+            (df['INVERTED_HAMMER'].iloc[indices['reversal']] | df['GRAVESTONE_DOJI'].iloc[indices['reversal']]) &
+            (df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']]) &
+            (df['Open'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']]) &
+            (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']])
+        ).all()
     
+    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if single candle reversal conditions are met"""
         for ema in ema_length:
@@ -233,11 +239,12 @@ class SingleCandleReversalStrategy(TradingStrategy):
 
 def get_crypto_symbols(client, exclude_keywords=None, base_currency='USDT'):
     exclude_keywords = exclude_keywords or ['UP', 'DOWN', 'BEAR', 'BULL']
+    exclude_set = set(exclude_keywords)
     info = client.get_exchange_info()
     symbols = [x['symbol'] for x in info['symbols']]
     return [
         symbol for symbol in symbols
-        if all(exclude not in symbol for exclude in exclude_keywords) and symbol.endswith(base_currency)
+        if not any(exclude in symbol for exclude in exclude_set) and symbol.endswith(base_currency)
     ]
 
 def get_symbols(type_, target_symbols=None):
@@ -253,13 +260,18 @@ def get_symbols(type_, target_symbols=None):
 
 
 def evaluate_conditions_new(ema_length, df, conditions, candle_indices):
-    for ema in ema_length:
-        if all(condition(df, ema, candle_indices) for condition in conditions):
-            return True
-    return False
+    return any(
+        all(condition(df, ema, candle_indices) for condition in conditions)
+        for ema in ema_length
+    )
 
 def evaluate_conditions(condition_name, symbol, interval, ema_length, df, conditions, candle_indices, long=True):
     for ema in ema_length:
+        # Pre-compute DataFrame values
+        initial_close = df['Close'].iloc[candle_indices['initial']]
+        reversal_close = df['Close'].iloc[candle_indices['reversal']]
+        approve_close = df['Close'].iloc[candle_indices['approve']]
+        # Vectorized condition check
         if all(condition(df, ema, candle_indices) for condition in conditions):
             alarm_name = f"{'LONG' if long else 'SHORT'} {condition_name}"
             print(f'Condition Triggered: {alarm_name}')
@@ -267,15 +279,14 @@ def evaluate_conditions(condition_name, symbol, interval, ema_length, df, condit
                 exchange_and_symbol = df['symbol'].iloc[0]
             else:
                 exchange_and_symbol = symbol
-
             try:
                 fig = creategraphics.create_graphics(df, long)
                 sendtotelegram.send_telegram(
                     exchange_and_symbol,
                     alarm_name,
-                    df['Close'].iloc[candle_indices['initial']],
-                    df['Close'].iloc[candle_indices['reversal']],
-                    df['Close'].iloc[candle_indices['approve']],
+                    initial_close,
+                    reversal_close,
+                    approve_close,
                     interval,
                     fig
                 )
@@ -294,29 +305,30 @@ def check_conditions_and_send_alarm(
     initial_candle_index, approve_candle_index, conditions, alarm_name, long
 ):
     for ema in ema_length:
+        # Pre-compute DataFrame values
+        initial_close = df['Close'].iloc[initial_candle_index]
+        reversal_close = df['Close'].iloc[reversal_candle_index]
+        approve_close = df['Close'].iloc[approve_candle_index]
+        # Vectorized condition check
         if all(condition(df, ema, reversal_candle_index, initial_candle_index, approve_candle_index) for condition in conditions):
             print(f'Condition Met: {alarm_name}')
             print(symbol)
-
             if isinstance(approve_candle_index, int):
                 candle_indices = {
                     'initial': initial_candle_index,
                     'reversal': reversal_candle_index,
                     'approve': approve_candle_index
                 }
-
                 fig = creategraphics.create_graphics(df, long)
-
                 sendtotelegram.send_telegram(
                     symbol,
                     alarm_name,
-                    df['Close'].iloc[candle_indices['initial']],
-                    df['Close'].iloc[candle_indices['reversal']],
-                    df['Close'].iloc[candle_indices['approve']],
+                    initial_close,
+                    reversal_close,
+                    approve_close,
                     interval,
                     fig
                 )
-
             else:
                 print("approve_candle_index is NOT an integer")
             break
@@ -433,7 +445,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             print("SYMBOL: " + symbol)
             df = getdata_stock.get_data_frame(symbol, exchange, kline_interval, lookback)
 
-            df = df.dropna()
+            df.dropna(inplace=True)
             df = add_indicators(df)
             if not validate_columns(df):
                 return
