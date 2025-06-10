@@ -70,7 +70,7 @@ def get_data_frame(symbol, exchange, interval, lookback, max_retries=20, backoff
     """
     def fetch_data():
         """Helper function to fetch data from the tvDatafeed API."""
-        return tv.get_hist(symbol, exchange, interval, n_bars=lookback)
+        return tv.get_hist(symbol, exchange, n_bars=lookback)
 
     for attempt in range(1, max_retries + 1):
         try:
