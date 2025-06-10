@@ -36,14 +36,15 @@ class FirebaseDB:
                     else:
                         # Try to get credentials from GitHub Secrets
                         github_credentials = os.getenv('FIREBASE_CREDENTIALS_JSON')
-                        if github_credentials:
-                            # Parse the JSON string from GitHub Secrets
-                            cred_dict = json.loads(github_credentials)
-                            cred = credentials.Certificate(cred_dict)
-                        else:
-                            print("Warning: No Firebase credentials found. Using default credentials.")
-                            cred = credentials.ApplicationDefault()
-                
+
+                        try:
+                            with open(github_credentials, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                cred = credentials.Certificate(data)
+                                print("📄 JSON dosyası başarıyla yüklendi.")
+                        except Exception as e:
+                            print("❌ JSON dosyası okunamadı:", e)
+
                 self.app = firebase_admin.initialize_app(cred)
             else:
                 self.app = firebase_admin.get_app()
