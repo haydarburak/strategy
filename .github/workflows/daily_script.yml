@@ -26,21 +26,35 @@ jobs:
       - name: Check Installed Packages
         run: pip list
 
-      - name: Decode Firebase credentials from base64
+      - name: Set up Firebase credentials and other environment variables
         run: |
+          # Decode Firebase credentials from base64 secret
           echo "${{ secrets.FIREBASE_CREDENTIALS_JSON_B64 }}" | base64 -d > firebase_credentials.json
-          CRED_PATH="$(pwd)/firebase_credentials.json"
-          printf "FIREBASE_CREDENTIALS_JSON=%s\n" "$CRED_PATH" >> "$GITHUB_ENV"
-
-      - name: Set up environment variables
-        run: |
+          
+          # Set Firebase credentials path as expected by your code
+          echo "FIREBASE_CREDENTIALS=$(pwd)/firebase_credentials.json" >> $GITHUB_ENV
+          
+          # Set other environment variables
           echo "SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
           echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
-      
-          echo "${{ secrets.FIREBASE_CREDENTIALS_JSON_B64 }}" | base64 -d > firebase_credentials.json
-          printf "FIREBASE_CREDENTIALS_JSON=%s\n" "$(pwd)/firebase_credentials.json" >> "$GITHUB_ENV"
-    
+
+      - name: Verify Firebase credentials
+        run: |
+          if [ -f "firebase_credentials.json" ]; then
+            echo "✅ Firebase credentials file created successfully"
+            echo "File size: $(stat -c%s firebase_credentials.json) bytes"
+            # Verify it's valid JSON without exposing content
+            if python -c "import json; json.load(open('firebase_credentials.json'))"; then
+              echo "✅ Firebase credentials JSON is valid"
+            else
+              echo "❌ Firebase credentials JSON is invalid"
+              exit 1
+            fi
+          else
+            echo "❌ Firebase credentials file not found"
+            exit 1
+          fi
       - name: Run Python Script
         run: python main.py
