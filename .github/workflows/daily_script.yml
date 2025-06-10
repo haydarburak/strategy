@@ -26,6 +26,12 @@ jobs:
       - name: Check Installed Packages
         run: pip list
 
+      - name: Decode Firebase credentials from base64
+        run: |
+          echo "${{ secrets.FIREBASE_CREDENTIALS_JSON_B64 }}" | base64 -d > firebase_credentials.json
+          CRED_PATH="$(pwd)/firebase_credentials.json"
+          printf "FIREBASE_CREDENTIALS_JSON=%s\n" "$CRED_PATH" >> "$GITHUB_ENV"
+
       - name: Set up environment variables
         run: |
           echo "SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" >> $GITHUB_ENV
@@ -38,3 +44,5 @@ jobs:
 
       - name: Run Python Script
         run: python main.py
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ env.FIREBASE_CREDENTIALS_JSON }}
