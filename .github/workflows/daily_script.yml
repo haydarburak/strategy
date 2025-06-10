@@ -32,9 +32,7 @@ jobs:
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
           echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
-
-      - name: Print HOLDING_STOCKS
-        run: echo "HOLDING_STOCKS=$HOLDING_STOCKS"
+          echo "FIREBASE_CREDENTIALS_JSON=${{ secrets.FIREBASE_CREDENTIALS_JSON }}" >> $GITHUB_ENV
 
       - name: Run Python Script
         run: python main.py

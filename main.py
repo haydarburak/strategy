@@ -1,7 +1,6 @@
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
-from numba import jit
 
 import getdata
 import getdata_stock
@@ -12,6 +11,7 @@ from candlestick import candlestick
 from tqdm import tqdm
 from notification import sendtotelegram
 from tvDatafeed import Interval
+from firebase_db import get_firebase_db
 # from binance.client import Client  # Uncomment when needed
 
 # Configuration Constants
@@ -101,7 +101,6 @@ class TwoCandelReversalStrategy(TradingStrategy):
             (df['High'].iloc[indices['reversal']] > df['High'].iloc[indices['initial']])
         ).all()
     
-    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if two-candle reversal conditions are met"""
         for ema in ema_length:
@@ -143,7 +142,6 @@ class DoubleTailPiercingStrategy(TradingStrategy):
             (df['High'].iloc[indices['reversal']] > df[ema].iloc[indices['reversal']])
         ).all()
     
-    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if double tail piercing conditions are met"""
         for ema in ema_length:
@@ -186,7 +184,6 @@ class BodyPiercingStrategy(TradingStrategy):
             (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']])
         ).all()
     
-    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if body piercing conditions are met"""
         for ema in ema_length:
@@ -224,7 +221,6 @@ class SingleCandleReversalStrategy(TradingStrategy):
             (df['Close'].iloc[indices['reversal']] < df[ema].iloc[indices['reversal']])
         ).all()
     
-    @jit(nopython=True)
     def check_conditions(self, df, ema_length, common_condition, candle_indices, is_long: bool) -> bool:
         """Check if single candle reversal conditions are met"""
         for ema in ema_length:
@@ -266,6 +262,8 @@ def evaluate_conditions_new(ema_length, df, conditions, candle_indices):
     )
 
 def evaluate_conditions(condition_name, symbol, interval, ema_length, df, conditions, candle_indices, long=True):
+    firebase_db = get_firebase_db()
+    
     for ema in ema_length:
         # Pre-compute DataFrame values
         initial_close = df['Close'].iloc[candle_indices['initial']]
@@ -280,6 +278,38 @@ def evaluate_conditions(condition_name, symbol, interval, ema_length, df, condit
             else:
                 exchange_and_symbol = symbol
             try:
+                # Save to Firebase
+                price_data = {
+                    'open': float(df['Open'].iloc[candle_indices['approve']]),
+                    'high': float(df['High'].iloc[candle_indices['approve']]),
+                    'low': float(df['Low'].iloc[candle_indices['approve']]),
+                    'close': float(approve_close),
+                    'volume': float(df['Volume'].iloc[candle_indices['approve']]) if 'Volume' in df.columns else 0.0,
+                    'initial_close': float(initial_close),
+                    'reversal_close': float(reversal_close)
+                }
+                
+                technical_indicators = {
+                    'ema': ema,
+                    'ema20': float(df['EMA20'].iloc[candle_indices['approve']]) if 'EMA20' in df.columns else 0.0,
+                    'ema50': float(df['EMA50'].iloc[candle_indices['approve']]) if 'EMA50' in df.columns else 0.0,
+                    'ema100': float(df['EMA100'].iloc[candle_indices['approve']]) if 'EMA100' in df.columns else 0.0,
+                    'ema200': float(df['EMA200'].iloc[candle_indices['approve']]) if 'EMA200' in df.columns else 0.0,
+                    'stoch_k': float(df['STOCH_K'].iloc[candle_indices['approve']]) if 'STOCH_K' in df.columns else 0.0,
+                    'stoch_d': float(df['STOCH_D'].iloc[candle_indices['approve']]) if 'STOCH_D' in df.columns else 0.0,
+                    'macd': float(df['MACD'].iloc[candle_indices['approve']]) if 'MACD' in df.columns else 0.0,
+                    'macd_signal': float(df['MACD_S'].iloc[candle_indices['approve']]) if 'MACD_S' in df.columns else 0.0
+                }
+                
+                firebase_db.save_trading_signal(
+                    symbol=exchange_and_symbol,
+                    strategy_name=condition_name,
+                    is_long=long,
+                    interval=interval,
+                    price_data=price_data,
+                    technical_indicators=technical_indicators
+                )
+                
                 fig = creategraphics.create_graphics(df, long)
                 sendtotelegram.send_telegram(
                     exchange_and_symbol,
@@ -456,10 +486,55 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 exchange_and_symbol = df.get('symbol', [symbol]).iloc[0] if 'symbol' in df else symbol
 
                 df = divergence.find_rsi_divergence(df)
+                firebase_db = get_firebase_db()
+                
+                # Check for bearish divergence
                 if df.iloc[-1]['Bearish_Divergence'] > 0:
                     message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                    
+                    # Save to Firebase
+                    try:
+                        price_data = {
+                            'open': float(df['Open'].iloc[-1]),
+                            'high': float(df['High'].iloc[-1]),
+                            'low': float(df['Low'].iloc[-1]),
+                            'close': float(df['Close'].iloc[-1]),
+                            'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
+                            'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 0.0
+                        }
+                        
+                        firebase_db.save_divergence_signal(
+                            symbol=df.iloc[-1]['symbol'],
+                            divergence_type='Bearish',
+                            interval=interval,
+                            price_data=price_data
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Failed to save bearish divergence to Firebase: {e}")
+                
+                # Check for bullish divergence
                 if df.iloc[-1]['Bullish_Divergence'] > 0:
                     message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                    
+                    # Save to Firebase
+                    try:
+                        price_data = {
+                            'open': float(df['Open'].iloc[-1]),
+                            'high': float(df['High'].iloc[-1]),
+                            'low': float(df['Low'].iloc[-1]),
+                            'close': float(df['Close'].iloc[-1]),
+                            'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
+                            'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 0.0
+                        }
+                        
+                        firebase_db.save_divergence_signal(
+                            symbol=df.iloc[-1]['symbol'],
+                            divergence_type='Bullish',
+                            interval=interval,
+                            price_data=price_data
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Failed to save bullish divergence to Firebase: {e}")
 
                 if message:
                     rsi_divergence_message += f"\n{message}"
@@ -567,10 +642,57 @@ def execute_positions(df, interval, symbol, ema_columns, indices, is_long):
         'reversal': reversal_idx,
         'approve': approve_idx
     }
+    
+    # Get Firebase instance
+    firebase_db = get_firebase_db()
+    
+    # Helper function to save trading signal to Firebase
+    def save_signal_to_firebase(strategy_name: str):
+        try:
+            # Extract price data
+            price_data = {
+                'open': float(df['Open'].iloc[approve_idx]),
+                'high': float(df['High'].iloc[approve_idx]),
+                'low': float(df['Low'].iloc[approve_idx]),
+                'close': float(df['Close'].iloc[approve_idx]),
+                'volume': float(df['Volume'].iloc[approve_idx]) if 'Volume' in df.columns else 0.0,
+                'initial_close': float(df['Close'].iloc[initial_idx]),
+                'reversal_close': float(df['Close'].iloc[reversal_idx])
+            }
+            
+            # Extract technical indicators
+            technical_indicators = {
+                'ema20': float(df['EMA20'].iloc[approve_idx]),
+                'ema50': float(df['EMA50'].iloc[approve_idx]),
+                'ema100': float(df['EMA100'].iloc[approve_idx]),
+                'ema200': float(df['EMA200'].iloc[approve_idx]),
+                'stoch_k': float(df['STOCH_K'].iloc[approve_idx]),
+                'stoch_d': float(df['STOCH_D'].iloc[approve_idx]),
+                'macd': float(df['MACD'].iloc[approve_idx]),
+                'macd_signal': float(df['MACD_S'].iloc[approve_idx]),
+                'rsi': float(df['RSI'].iloc[approve_idx]) if 'RSI' in df.columns else 0.0
+            }
+            
+            # Save to Firebase
+            signal_id = firebase_db.save_trading_signal(
+                symbol=symbol,
+                strategy_name=strategy_name,
+                is_long=is_long,
+                interval=interval,
+                price_data=price_data,
+                technical_indicators=technical_indicators
+            )
+            
+            if signal_id:
+                print(f"🔥 Signal saved to Firebase: {signal_id}")
+            
+        except Exception as e:
+            print(f"⚠️  Failed to save signal to Firebase: {e}")
 
     strategy = TwoCandelReversalStrategy()
     if strategy.check_conditions(df, ema_columns, common_condition, candle_indices, is_long):
         sendtotelegram.send_trade_signal(df, symbol, interval, candle_indices, is_long=is_long, strategy_name=strategy.name)
+        save_signal_to_firebase(strategy.name)
 
     cift_kuyruk_delis(interval, symbol, ema_columns, common_condition, df, reversal_idx, initial_idx, approve_idx, is_long)
     govde_delis(interval, symbol, ema_columns, common_condition, df, reversal_idx, initial_idx, approve_idx, is_long)
