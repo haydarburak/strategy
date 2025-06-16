@@ -684,10 +684,15 @@ def execute_positions(df, interval, symbol, ema_columns, indices, is_long):
                 'macd_signal': float(df['MACD_S'].iloc[approve_idx]),
                 'rsi': float(df['RSI'].iloc[approve_idx]) if 'RSI' in df.columns else 0.0
             }
-            
+
+            if df.get('symbol') is not None:
+                exchange_and_symbol = df['symbol'].iloc[0]
+            else:
+                exchange_and_symbol = symbol
+
             # Save to Firebase
             signal_id = firebase_db.save_trading_signal(
-                symbol=symbol,
+                symbol=exchange_and_symbol,
                 strategy_name=strategy_name,
                 is_long=is_long,
                 interval=interval,
