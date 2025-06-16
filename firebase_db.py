@@ -386,7 +386,7 @@ class FirebaseDB:
                          index_long: Optional[bool],
                          interval: str) -> Optional[str]:
         """
-        Save index status to Firestore
+        Save or update index status in Firestore
         
         Args:
             index_symbol: Index symbol (e.g., 'SPX')
@@ -395,7 +395,7 @@ class FirebaseDB:
             interval: Timeframe (e.g., '1H', '4H', '1D')
             
         Returns:
-            str: Document ID of the saved index status, None if failed
+            str: Document ID of the saved/updated index status, None if failed
         """
         if not self.is_connected():
             print("❌ Firebase not connected. Index status not saved.")
@@ -410,25 +410,46 @@ class FirebaseDB:
             else:  # index_long is None
                 status = "NOTR"
             
-            # Create index status document
-            index_data = {
-                'timestamp': datetime.now(timezone.utc),
-                'index_symbol': index_symbol,
-                'index_exchange': index_exchange,
-                'full_symbol': f"{index_exchange}:{index_symbol}",
-                'status': status,
-                'index_long': index_long,
-                'interval': interval,
-                'created_at': datetime.now(timezone.utc),
-                'chart_url': f"https://www.tradingview.com/chart/?symbol={index_exchange}:{index_symbol}&interval={interval}"
-            }
+            # Create a unique document ID based on symbol, exchange, and interval
+            doc_id = f"{index_exchange}_{index_symbol}_{interval}"
             
-            # Add to index_status collection
-            doc_ref = self.db.collection('index_status').add(index_data)
-            index_id = doc_ref[1].id
+            # Check if document already exists
+            doc_ref = self.db.collection('index_status').document(doc_id)
+            existing_doc = doc_ref.get()
             
-            print(f"✅ Index status saved: {index_id} - {index_symbol} ({index_exchange}) - {status}")
-            return index_id
+            current_time = datetime.now(timezone.utc)
+            
+            if existing_doc.exists:
+                # Update existing document
+                update_data = {
+                    'timestamp': current_time,
+                    'status': status,
+                    'index_long': index_long,
+                    'updated_at': current_time,
+                    'chart_url': f"https://www.tradingview.com/chart/?symbol={index_exchange}:{index_symbol}&interval={interval}"
+                }
+                
+                doc_ref.update(update_data)
+                print(f"🔄 Index status updated: {doc_id} - {index_symbol} ({index_exchange}) - {status}")
+                return doc_id
+            else:
+                # Create new document with specific ID
+                index_data = {
+                    'timestamp': current_time,
+                    'index_symbol': index_symbol,
+                    'index_exchange': index_exchange,
+                    'full_symbol': f"{index_exchange}:{index_symbol}",
+                    'status': status,
+                    'index_long': index_long,
+                    'interval': interval,
+                    'created_at': current_time,
+                    'updated_at': current_time,
+                    'chart_url': f"https://www.tradingview.com/chart/?symbol={index_exchange}:{index_symbol}&interval={interval}"
+                }
+                
+                doc_ref.set(index_data)
+                print(f"✅ Index status created: {doc_id} - {index_symbol} ({index_exchange}) - {status}")
+                return doc_id
             
         except Exception as e:
             print(f"❌ Error saving index status: {e}")
