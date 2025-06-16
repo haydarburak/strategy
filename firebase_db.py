@@ -380,6 +380,60 @@ class FirebaseDB:
         except Exception as e:
             print(f"❌ Error updating divergence statistics: {e}")
     
+    def save_index_status(self, 
+                         index_symbol: str,
+                         index_exchange: str,
+                         index_long: Optional[bool],
+                         interval: str) -> Optional[str]:
+        """
+        Save index status to Firestore
+        
+        Args:
+            index_symbol: Index symbol (e.g., 'SPX')
+            index_exchange: Index exchange (e.g., 'OANDA')
+            index_long: True for LONG, False for SHORT, None for NOTR
+            interval: Timeframe (e.g., '1H', '4H', '1D')
+            
+        Returns:
+            str: Document ID of the saved index status, None if failed
+        """
+        if not self.is_connected():
+            print("❌ Firebase not connected. Index status not saved.")
+            return None
+            
+        try:
+            # Determine status based on index_long value
+            if index_long is True:
+                status = "LONG"
+            elif index_long is False:
+                status = "SHORT"
+            else:  # index_long is None
+                status = "NOTR"
+            
+            # Create index status document
+            index_data = {
+                'timestamp': datetime.now(timezone.utc),
+                'index_symbol': index_symbol,
+                'index_exchange': index_exchange,
+                'full_symbol': f"{index_exchange}:{index_symbol}",
+                'status': status,
+                'index_long': index_long,
+                'interval': interval,
+                'created_at': datetime.now(timezone.utc),
+                'chart_url': f"https://www.tradingview.com/chart/?symbol={index_exchange}:{index_symbol}&interval={interval}"
+            }
+            
+            # Add to index_status collection
+            doc_ref = self.db.collection('index_status').add(index_data)
+            index_id = doc_ref[1].id
+            
+            print(f"✅ Index status saved: {index_id} - {index_symbol} ({index_exchange}) - {status}")
+            return index_id
+            
+        except Exception as e:
+            print(f"❌ Error saving index status: {e}")
+            return None
+    
     def close(self):
         """Clean up Firebase connection"""
         if self.app:

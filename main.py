@@ -454,6 +454,18 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 index_long = False
             else:
                 index_long = None
+            
+            # Save index status to Firebase
+            try:
+                firebase_db = get_firebase_db()
+                firebase_db.save_index_status(
+                    index_symbol=index_symbol,
+                    index_exchange=index_exchange,
+                    index_long=index_long,
+                    interval=interval
+                )
+            except Exception as e:
+                print(f"⚠️ Failed to save index status to Firebase: {e}")
             if index_long != None:
                 print('Index: ' + index_symbol + ' Index Exchange: ' + index_exchange + ' is started')
 
