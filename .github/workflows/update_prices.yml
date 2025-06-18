@@ -8,7 +8,7 @@ on:
     # 7 AM German time = 6 AM UTC (CET) or 5 AM UTC (CEST)
     # 11 PM German time = 10 PM UTC (CET) or 9 PM UTC (CEST)
     # Using 5 AM to 10 PM UTC to ensure coverage in both time zones
-    - cron: "*/15 5-22 * * 1-5"  # Every 15 minutes from 5 AM to 10 PM UTC, Monday to Friday
+    - cron: "*/15 5-23 * * 1-5"  # Every 15 minutes from 5 AM to 10 PM UTC, Monday to Friday
 
   workflow_dispatch:  # Allows manual trigger
 
