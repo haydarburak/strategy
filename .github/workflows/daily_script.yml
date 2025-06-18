@@ -2,7 +2,7 @@ name: Run Python Script Daily
 
 on:
   schedule:
-    - cron: "0 21 * * *"  # Runs daily at 11 PM German time (CET/CEST adjusted)
+    - cron: "0 21 * * 1-5"  # Runs at 11 PM German time, Monday to Friday only
 
   workflow_dispatch:  # Allows manual trigger
 
