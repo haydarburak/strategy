@@ -12,6 +12,7 @@ grpcio-status>=1.48.0
 numpy==1.23.5
 scipy>=1.9.0
 pandas==2.2.3
+pandas-ta
 
 # Technical analysis - use stable versions
 numba>=0.58.0  # Compatible with Python 3.11
