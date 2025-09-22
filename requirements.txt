@@ -4,14 +4,14 @@ wheel>=0.42.0
 Cython>=3.0.0
 
 # Firebase dependencies
-firebase-admin>=6.5.0
-grpcio>=1.60.0
-grpcio-status>=1.60.0
+firebase-admin>=6.2.0
+grpcio>=1.48.0
+grpcio-status>=1.48.0
 
-# Numerical base packages - updated for Python 3.12
-numpy>=1.26.0
-scipy>=1.11.0
-pandas>=2.2.0
+# Numerical base packages - Python 3.12 compatible
+numpy>=1.26.0,<2.0.0
+scipy>=1.10.0
+pandas>=2.0.0,<3.0.0
 pandas_ta==0.3.14b0
 
 # Technical analysis - Python 3.12 compatible
