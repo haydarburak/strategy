@@ -8,14 +8,14 @@ firebase-admin>=6.2.0
 grpcio>=1.48.0
 grpcio-status>=1.48.0
 
-# Numerical base packages - updated for compatibility
-numpy>=1.23.5  # Allow higher versions for package compatibility
+# Numerical base packages - fixed versions for compatibility
+numpy==1.23.5
 scipy>=1.9.0
 pandas==2.2.3
 
 # Technical analysis - use stable versions
 numba>=0.58.0  # Compatible with Python 3.11
-pandas-ta-remake==1.0.4  # Will use numpy 2.2.1 as required
+# pandas_ta - will be installed separately if needed
 
 # Financial data
 yfinance==0.2.52
@@ -106,3 +106,6 @@ urllib3==2.2.3
 webencodings==0.5.1
 zope.interface==7.2
 cffi==1.17.1
+
+# Git dependencies - install last
+git+https://github.com/rongardF/tvdatafeed.git
