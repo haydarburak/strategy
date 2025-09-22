@@ -1,19 +1,14 @@
-name: Update Stock Prices
+name: Run Python Script Daily
+
 on:
   schedule:
-    # Runs every 15 minutes from 7 AM to 11 PM German time (Monday to Friday)
-    # German time is UTC+1 (CET) in winter, UTC+2 (CEST) in summer
-    # To cover both, we use UTC times that work for both scenarios:
-    # 7 AM German time = 6 AM UTC (CET) or 5 AM UTC (CEST)
-    # 11 PM German time = 10 PM UTC (CET) or 9 PM UTC (CEST)
-    # Using 5 AM to 10 PM UTC to ensure coverage in both time zones
-    - cron: "*/15 5-22 * * 1-5"  # Fixed: space after * and changed 23 to 22 for better coverage
+    - cron: "0 21 * * 1-5"  # Runs at 11 PM German time, Monday to Friday only
+
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
   run_script:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -21,7 +16,7 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Switch to 3.11 for better package compatibility
+          python-version: '3.11'  # Changed to 3.11 for better compatibility
           cache: 'pip'
           
       - name: Verify Python Version
@@ -30,37 +25,14 @@ jobs:
           python --version
           python -c "import sys; print(f'Full Python version: {sys.version}')"
           
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
-          
-      - name: Upgrade Core Build Tools
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools>=65.0.0
-          python -m pip install --upgrade wheel
-          python -m pip install --upgrade Cython
-          
-      - name: Install Core Packages First
-        run: |
-          pip install numpy==1.23.5
-          pip install pandas==2.2.3
-          pip install numba>=0.56.0,<0.59.0
-          
-      - name: Install Remaining Dependencies
-        run: |
           pip install -r requirements.txt
-          
-      - name: Install Git Dependencies (Optional)
-        run: |
-          pip install git+https://github.com/rongardF/tvdatafeed.git || echo "⚠️ tvdatafeed installation failed"
-          
+
       - name: Check Installed Packages
-        run: |
-          echo "Key packages installed:"
-          pip list | grep -E "(pandas|numpy|firebase|yfinance)"
-          
+        run: pip list
+
       - name: Set up Firebase credentials and other environment variables
         run: |
           # Decode Firebase credentials from base64 secret
@@ -74,7 +46,7 @@ jobs:
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
           echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
-          
+
       - name: Verify Firebase credentials
         run: |
           if [ -f "firebase_credentials.json" ]; then
@@ -91,23 +63,5 @@ jobs:
             echo "❌ Firebase credentials file not found"
             exit 1
           fi
-          
-      - name: Test Firebase Connection
-        run: |
-          python -c "
-          import firebase_admin
-          from firebase_admin import credentials
-          print('✅ Firebase Admin SDK imported successfully')
-          "
-          
-      - name: Run Price Update Script
-        run: |
-          echo "🚀 Starting price update process..."
-          echo "📅 Running at: $(TZ='Europe/Berlin' date +'%H:%M German time (%A)')"
-          python updateprice.py
-          
-      - name: Cleanup
-        if: always()
-        run: |
-          # Remove sensitive files
-          rm -f firebase_credentials.json
+      - name: Run Python Script
+        run: python main.py
