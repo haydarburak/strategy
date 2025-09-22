@@ -12,7 +12,7 @@ grpcio-status>=1.48.0
 numpy>=1.26.0,<2.0.0
 scipy>=1.10.0
 pandas>=2.0.0,<3.0.0
-pandas_ta==0.3.14b0
+pandas_ta==0.4.71b0
 
 # Technical analysis - Python 3.12 compatible
 numba>=0.59.0
