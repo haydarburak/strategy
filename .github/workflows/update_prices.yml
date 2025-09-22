@@ -38,15 +38,15 @@ jobs:
       - name: Upgrade Core Build Tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools>=65.0.0
-          python -m pip install --upgrade wheel
-          python -m pip install --upgrade Cython
+          python -m pip install --upgrade setuptools>=70.0.0
+          python -m pip install --upgrade wheel>=0.42.0
+          python -m pip install --upgrade Cython>=3.0.0
           
       - name: Install Core Packages First
         run: |
-          pip install numpy==1.23.5
-          pip install pandas==2.2.3
-          pip install numba>=0.58.0
+          pip install numpy>=1.26.0
+          pip install pandas>=2.2.0
+          pip install numba>=0.59.0
           
       - name: Install Remaining Dependencies
         run: |
