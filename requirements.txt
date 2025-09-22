@@ -12,11 +12,10 @@ grpcio-status>=1.48.0
 numpy==1.23.5
 scipy>=1.9.0
 pandas==2.2.3
-git+https://github.com/twopirllc/pandas-ta.git
 
-# Technical analysis - use stable versions
-numba>=0.58.0  # Compatible with Python 3.11
-# pandas_ta - will be installed separately if needed
+# Technical analysis - use stable versions (FIXED)
+numba>=0.56.0,<0.59.0  # Compatible with Python 3.10
+pandas-ta-remake==1.0.4  # Stable PyPI version instead of git
 
 # Financial data
 yfinance==0.2.52
@@ -108,5 +107,5 @@ webencodings==0.5.1
 zope.interface==7.2
 cffi==1.17.1
 
-# Git dependencies - install last
-git+https://github.com/rongardF/tvdatafeed.git
+# Git dependencies moved to separate workflow step (commented out)
+# git+https://github.com/rongardF/tvdatafeed.git
