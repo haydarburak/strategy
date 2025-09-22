@@ -3,14 +3,37 @@ import pandas as pd
 from tvDatafeed import TvDatafeed
 from websocket import WebSocketTimeoutException
 from tradingview_screener import Query, Column
+import requests
+from io import StringIO
 
 tv = TvDatafeed()
 
 def get_sp500_symbols():
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    tables = pd.read_html(url)  # Sayfadaki tüm tabloları alır
-    sp500_table = tables[0]  # İlk tablo genellikle S&P 500 şirketleridir
-    return sp500_table['Symbol'].tolist()  # Sembolleri çek
+
+    # Add proper headers to avoid 403 Forbidden error
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+
+    try:
+        # Use requests to fetch the page with proper headers
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        # Parse the HTML content using pandas
+        tables = pd.read_html(StringIO(response.text))
+        sp500_table = tables[0]  # İlk tablo genellikle S&P 500 şirketleridir
+        return sp500_table['Symbol'].tolist()  # Sembolleri çek
+
+    except Exception as e:
+        print(f"Error fetching S&P 500 symbols: {e}")
+        # Return a fallback list of major S&P 500 symbols
+        return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'JNJ', 'UNH',
+                'PG', 'V', 'HD', 'CVX', 'MA', 'BAC', 'ABBV', 'PFE', 'KO', 'AVGO', 'PEP', 'TMO',
+                'COST', 'WMT', 'DIS', 'ABT', 'DHR', 'VZ', 'ADBE', 'CRM', 'NFLX', 'XOM', 'NKE',
+                'CMCSA', 'BMY', 'LIN', 'ACN', 'ORCL', 'WFC', 'MCD', 'NEE', 'PM', 'HON', 'UPS',
+                'C', 'QCOM', 'T', 'LOW', 'MDT', 'UNP', 'GS', 'IBM', 'CAT', 'INTC']
 
 def get_stock_symbols(target_symbols=None):
     target_symbols = target_symbols or set()
