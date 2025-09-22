@@ -9,7 +9,7 @@ grpcio>=1.48.0
 grpcio-status>=1.48.0
 
 # Numerical base packages - Python 3.12 compatible
-numpy>=1.26.0,<2.0.0
+numpy>=2.2.6
 scipy>=1.10.0
 pandas>=2.0.0,<3.0.0
 pandas_ta==0.4.71b0
