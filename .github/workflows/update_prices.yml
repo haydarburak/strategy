@@ -21,7 +21,7 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Changed to 3.11 for better compatibility
+          python-version: '3.12'  # Updated to Python 3.12
           cache: 'pip'
           
       - name: Verify Python Version
