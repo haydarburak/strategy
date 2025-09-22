@@ -1,13 +1,13 @@
 name: Update Stock Prices
 on:
   schedule:
-    # Runs every 15 minutes from 7 AM to 11 PM German time (Monday to Friday)
+    # Runs every 30 minutes from 7 AM to 11 PM German time (Monday to Friday)
     # German time is UTC+1 (CET) in winter, UTC+2 (CEST) in summer
     # To cover both, we use UTC times that work for both scenarios:
     # 7 AM German time = 6 AM UTC (CET) or 5 AM UTC (CEST)
     # 11 PM German time = 10 PM UTC (CET) or 9 PM UTC (CEST)
     # Using 5 AM to 10 PM UTC to ensure coverage in both time zones
-    - cron: "*/15 5-22 * * 1-5"  # Fixed: space after * and changed 23 to 22 for better coverage
+    - cron: "*/30 5-22 * * 1-5"  # Fixed: space after * and changed 23 to 22 for better coverage
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
