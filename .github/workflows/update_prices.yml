@@ -1,5 +1,4 @@
 name: Update Stock Prices
-
 on:
   schedule:
     # Runs every 15 minutes from 7 AM to 11 PM German time (Monday to Friday)
@@ -8,37 +7,54 @@ on:
     # 7 AM German time = 6 AM UTC (CET) or 5 AM UTC (CEST)
     # 11 PM German time = 10 PM UTC (CET) or 9 PM UTC (CEST)
     # Using 5 AM to 10 PM UTC to ensure coverage in both time zones
-    - cron: "*/15 5-23 * * 1-5"  # Every 15 minutes from 5 AM to 10 PM UTC, Monday to Friday
-
+    - cron: "*/15 5-22 * * 1-5"  # Fixed: space after * and changed 23 to 22 for better coverage
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
   run_script:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
+        
       - name: Set Up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'  # Changed to 3.11 for better compatibility
           cache: 'pip'
-
+          
       - name: Verify Python Version
         run: |
+          echo "Python version check:"
           python --version
-          which python
-          python -c "import sys; print(f'Python version: {sys.version}')"
-
-      - name: Install Dependencies
+          python -c "import sys; print(f'Full Python version: {sys.version}')"
+          
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          
+      - name: Upgrade Core Build Tools
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --upgrade setuptools>=65.0.0
+          python -m pip install --upgrade wheel
+          python -m pip install --upgrade Cython
+          
+      - name: Install NumPy First
+        run: |
+          pip install numpy==1.23.5
+          
+      - name: Install Dependencies
+        run: |
           pip install -r requirements.txt
-
+          
       - name: Check Installed Packages
-        run: pip list
-
+        run: |
+          echo "Key packages installed:"
+          pip list | grep -E "(pandas|numpy|firebase|yfinance)"
+          
       - name: Set up Firebase credentials and other environment variables
         run: |
           # Decode Firebase credentials from base64 secret
@@ -52,7 +68,7 @@ jobs:
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
           echo "HOLDING_STOCKS=${{ secrets.HOLDING_STOCKS }}" >> $GITHUB_ENV
-
+          
       - name: Verify Firebase credentials
         run: |
           if [ -f "firebase_credentials.json" ]; then
@@ -69,8 +85,23 @@ jobs:
             echo "❌ Firebase credentials file not found"
             exit 1
           fi
+          
+      - name: Test Firebase Connection
+        run: |
+          python -c "
+          import firebase_admin
+          from firebase_admin import credentials
+          print('✅ Firebase Admin SDK imported successfully')
+          "
+          
       - name: Run Price Update Script
         run: |
           echo "🚀 Starting price update process..."
           echo "📅 Running at: $(TZ='Europe/Berlin' date +'%H:%M German time (%A)')"
           python updateprice.py
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          # Remove sensitive files
+          rm -f firebase_credentials.json
