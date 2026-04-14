@@ -560,27 +560,40 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                         'rsi':    float(df['RSI14'].iloc[idx])  if 'RSI14'  in df.columns else 0.0,
                     }
 
-                v2_signals = [
+                import pandas as _pd
+                from datetime import timezone as _tz
+
+                v2_signal_defs = [
                     ('Bearish_Divergence_V2',    'bearish',        'Bearish Divergence (Pivot)'),
                     ('Bullish_Divergence_V2',    'bullish',        'Bullish Divergence (Pivot)'),
                     ('Hidden_Bearish_Divergence','hidden_bearish', 'Hidden Bearish Divergence'),
                     ('Hidden_Bullish_Divergence','hidden_bullish', 'Hidden Bullish Divergence'),
                 ]
 
-                for col, div_type, label in v2_signals:
+                # Collect the most recent pivot bar across ALL detected types.
+                # We only save the SINGLE most recent divergence signal per stock —
+                # having multiple contradictory signals (bullish + bearish) on the
+                # same card is confusing and usually means the algorithm found
+                # different old pivot pairs. Only the freshest one is actionable.
+                best_candidate = None  # (pivot_bar_index, last_idx, div_type, label)
+
+                for col, div_type, label in v2_signal_defs:
                     if col not in df.columns:
                         continue
-                    # Find the last bar where this divergence was flagged
                     flagged = df[df[col] > 0]
                     if flagged.empty:
                         continue
                     pivot_bar_index = flagged.index[-1]
                     last_idx = df.index.get_loc(pivot_bar_index)
+
+                    if best_candidate is None or pivot_bar_index > best_candidate[0]:
+                        best_candidate = (pivot_bar_index, last_idx, div_type, label)
+
+                if best_candidate is not None:
+                    pivot_bar_index, last_idx, div_type, label = best_candidate
                     signal_symbol = df.iloc[last_idx]['symbol'] if 'symbol' in df.columns else symbol
 
-                    # Convert the pivot bar's index to a timezone-aware datetime
-                    import pandas as _pd
-                    from datetime import timezone as _tz
+                    # Convert pivot bar index to timezone-aware datetime
                     pivot_dt = pivot_bar_index
                     if isinstance(pivot_dt, _pd.Timestamp):
                         pivot_dt = pivot_dt.to_pydatetime()

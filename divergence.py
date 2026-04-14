@@ -36,7 +36,10 @@ def _find_pivot_lows(series: np.ndarray, left: int, right: int):
 
 
 def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
-                            rsi_ob: float = 70.0, rsi_os: float = 30.0):
+                            rsi_ob: float = 70.0, rsi_os: float = 30.0,
+                            rsi_min_spread: float = 5.0,
+                            hidden_bull_rsi_max: float = 55.0,
+                            hidden_bear_rsi_min: float = 45.0):
     """
     Proper pivot-based RSI divergence detector.
 
@@ -48,6 +51,16 @@ def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
 
     Both price AND RSI are compared at the same pivot bar, so the comparison
     is structurally valid — unlike comparing separate window max/min values.
+
+    Quality filters (prevent RSI-neutral noise):
+      rsi_min_spread     : minimum RSI difference between the two compared pivots.
+                           Eliminates micro-oscillation false positives (default 5).
+      hidden_bull_rsi_max: hidden bullish only fires when RSI at p2 is BELOW this
+                           threshold — signal must still be in "weak / recovering"
+                           territory, not already overbought (default 55).
+      hidden_bear_rsi_min: hidden bearish only fires when RSI at p2 is ABOVE this
+                           threshold — signal must be in "recovering but failing"
+                           territory, not already oversold (default 45).
 
     Confirmed pivots only (right bars must have already closed), so no
     signals fire on live unclosed candles.
@@ -87,34 +100,47 @@ def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
     for i in range(1, len(pivot_highs)):
         p1, p2 = pivot_highs[i - 1], pivot_highs[i]
 
+        rsi_spread = abs(rsi[p2] - rsi[p1])
+        if rsi_spread < rsi_min_spread:
+            # RSI difference too small — likely noise, not a real divergence
+            continue
+
         price_hh = high[p2] > high[p1]   # price: higher high
         price_lh = high[p2] < high[p1]   # price: lower high
         rsi_lh   = rsi[p2]  < rsi[p1]    # RSI:   lower high
         rsi_hh   = rsi[p2]  > rsi[p1]    # RSI:   higher high
 
-        # Regular bearish: price HH + RSI LH (overbought zone required)
+        # Regular bearish: price HH + RSI LH — must start from overbought territory
         if price_hh and rsi_lh and rsi[p1] >= rsi_ob:
             df.iat[p2, df.columns.get_loc('Bearish_Divergence_V2')] = close[p2]
 
-        # Hidden bearish: price LH + RSI HH (bearish continuation)
-        if price_lh and rsi_hh:
+        # Hidden bearish: price LH + RSI HH — p2 RSI must still be above midline
+        # (i.e. price hasn't broken out but RSI is recovering above 45 → showing
+        #  the bounce is fake and downtrend will resume)
+        if price_lh and rsi_hh and rsi[p2] >= hidden_bear_rsi_min:
             df.iat[p2, df.columns.get_loc('Hidden_Bearish_Divergence')] = close[p2]
 
     # --- Bullish & Hidden Bullish (compare consecutive pivot lows) ---
     for i in range(1, len(pivot_lows)):
         p1, p2 = pivot_lows[i - 1], pivot_lows[i]
 
+        rsi_spread = abs(rsi[p2] - rsi[p1])
+        if rsi_spread < rsi_min_spread:
+            continue
+
         price_ll = low[p2] < low[p1]    # price: lower low
         price_hl = low[p2] > low[p1]    # price: higher low
         rsi_hl   = rsi[p2] > rsi[p1]   # RSI:   higher low
         rsi_ll   = rsi[p2] < rsi[p1]   # RSI:   lower low
 
-        # Regular bullish: price LL + RSI HL (oversold zone required)
+        # Regular bullish: price LL + RSI HL — must start from oversold territory
         if price_ll and rsi_hl and rsi[p1] <= rsi_os:
             df.iat[p2, df.columns.get_loc('Bullish_Divergence_V2')] = close[p2]
 
-        # Hidden bullish: price HL + RSI LL (bullish continuation)
-        if price_hl and rsi_ll:
+        # Hidden bullish: price HL + RSI LL — p2 RSI must still be below midline
+        # (i.e. price is making higher lows in an uptrend while RSI pulled back
+        #  below 55 → the dip is healthy, trend continues up)
+        if price_hl and rsi_ll and rsi[p2] <= hidden_bull_rsi_max:
             df.iat[p2, df.columns.get_loc('Hidden_Bullish_Divergence')] = close[p2]
 
     return df
