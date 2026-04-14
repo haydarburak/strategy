@@ -503,8 +503,46 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             if df is not None:
                 exchange_and_symbol = df.get('symbol', [symbol]).iloc[0] if 'symbol' in df else symbol
 
-                # Legacy method kept in divergence.py but not invoked here
+                # --- Legacy divergence (bypassed, kept for reference) ---
                 # df = divergence.find_rsi_divergence(df)
+                # if df.iloc[-1]['Bearish_Divergence'] > 0:
+                #     message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                #     try:
+                #         price_data = {
+                #             'open':   float(df['Open'].iloc[-1]),
+                #             'high':   float(df['High'].iloc[-1]),
+                #             'low':    float(df['Low'].iloc[-1]),
+                #             'close':  float(df['Close'].iloc[-1]),
+                #             'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
+                #             'rsi':    float(df['RSI'].iloc[-1])    if 'RSI'    in df.columns else 0.0,
+                #         }
+                #         firebase_db.save_divergence_signal(
+                #             symbol=df.iloc[-1]['symbol'],
+                #             divergence_type='Bearish',
+                #             interval=interval,
+                #             price_data=price_data
+                #         )
+                #     except Exception as e:
+                #         print(f"⚠️ Failed to save bearish divergence to Firebase: {e}")
+                # if df.iloc[-1]['Bullish_Divergence'] > 0:
+                #     message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
+                #     try:
+                #         price_data = {
+                #             'open':   float(df['Open'].iloc[-1]),
+                #             'high':   float(df['High'].iloc[-1]),
+                #             'low':    float(df['Low'].iloc[-1]),
+                #             'close':  float(df['Close'].iloc[-1]),
+                #             'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
+                #             'rsi':    float(df['RSI'].iloc[-1])    if 'RSI'    in df.columns else 0.0,
+                #         }
+                #         firebase_db.save_divergence_signal(
+                #             symbol=df.iloc[-1]['symbol'],
+                #             divergence_type='Bullish',
+                #             interval=interval,
+                #             price_data=price_data
+                #         )
+                #     except Exception as e:
+                #         print(f"⚠️ Failed to save bullish divergence to Firebase: {e}")
 
                 firebase_db = get_firebase_db()
 
