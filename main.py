@@ -479,8 +479,14 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     'INDEX SKIPPED'
                 )
 
-        # Use portfolio holdings from configuration
-        holding_stocks = TradingConfig.HOLDING_STOCKS
+        # Try to load watchlist stocks from Firebase, fall back to hardcoded list
+        firebase_db = get_firebase_db()
+        firebase_watchlist = firebase_db.get_all_watchlist_stocks()
+        holding_stocks = firebase_watchlist if firebase_watchlist else TradingConfig.HOLDING_STOCKS
+        if firebase_watchlist:
+            print(f"✅ Using {len(holding_stocks)} stocks from Firebase watchlists")
+        else:
+            print(f"⚠️ Firebase watchlist empty, using {len(TradingConfig.HOLDING_STOCKS)} hardcoded stocks")
 
         print("Divergence analsys is starting")
         for symbol in tqdm(holding_stocks):

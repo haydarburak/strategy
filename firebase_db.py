@@ -455,6 +455,36 @@ class FirebaseDB:
             print(f"❌ Error saving index status: {e}")
             return None
     
+    def get_all_watchlist_stocks(self) -> list:
+        """
+        Read all users' watchlists from Firestore and return the union of all stocks.
+
+        Returns:
+            List of unique stock symbols e.g. ["NASDAQ:GOOGL", "BIST:KRONT"]
+        """
+        if not self.is_connected():
+            print("❌ Firebase not connected. Cannot fetch watchlists.")
+            return []
+
+        try:
+            docs = self.db.collection('watchlists').stream()
+            all_stocks = set()
+            user_count = 0
+
+            for doc in docs:
+                data = doc.to_dict()
+                stocks = data.get('stocks', [])
+                all_stocks.update(stocks)
+                user_count += 1
+
+            stock_list = list(all_stocks)
+            print(f"📋 Loaded {len(stock_list)} unique stocks from {user_count} user watchlist(s)")
+            return stock_list
+
+        except Exception as e:
+            print(f"❌ Error fetching watchlists: {e}")
+            return []
+
     def close(self):
         """Clean up Firebase connection"""
         if self.app:
