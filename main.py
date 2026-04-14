@@ -503,56 +503,90 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
             if df is not None:
                 exchange_and_symbol = df.get('symbol', [symbol]).iloc[0] if 'symbol' in df else symbol
 
+                # --- Legacy divergence (original method, unchanged) ---
                 df = divergence.find_rsi_divergence(df)
                 firebase_db = get_firebase_db()
-                
+
+                def _price_data(df):
+                    return {
+                        'open':   float(df['Open'].iloc[-1]),
+                        'high':   float(df['High'].iloc[-1]),
+                        'low':    float(df['Low'].iloc[-1]),
+                        'close':  float(df['Close'].iloc[-1]),
+                        'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
+                        'rsi':    float(df['RSI'].iloc[-1])    if 'RSI'    in df.columns else 0.0,
+                    }
+
                 # Check for bearish divergence
                 if df.iloc[-1]['Bearish_Divergence'] > 0:
                     message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBearish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
-                    
-                    # Save to Firebase
                     try:
-                        price_data = {
-                            'open': float(df['Open'].iloc[-1]),
-                            'high': float(df['High'].iloc[-1]),
-                            'low': float(df['Low'].iloc[-1]),
-                            'close': float(df['Close'].iloc[-1]),
-                            'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
-                            'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 0.0
-                        }
-                        
                         firebase_db.save_divergence_signal(
                             symbol=df.iloc[-1]['symbol'],
                             divergence_type='Bearish',
                             interval=interval,
-                            price_data=price_data
+                            price_data=_price_data(df)
                         )
                     except Exception as e:
                         print(f"⚠️ Failed to save bearish divergence to Firebase: {e}")
-                
+
                 # Check for bullish divergence
                 if df.iloc[-1]['Bullish_Divergence'] > 0:
                     message += f"SYMBOL: {df.iloc[-1]['symbol']}\nBullish Divergence\nLink: https://www.tradingview.com/chart/?symbol={df.iloc[-1]['symbol']}&interval={interval}"
-                    
-                    # Save to Firebase
                     try:
-                        price_data = {
-                            'open': float(df['Open'].iloc[-1]),
-                            'high': float(df['High'].iloc[-1]),
-                            'low': float(df['Low'].iloc[-1]),
-                            'close': float(df['Close'].iloc[-1]),
-                            'volume': float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0.0,
-                            'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 0.0
-                        }
-                        
                         firebase_db.save_divergence_signal(
                             symbol=df.iloc[-1]['symbol'],
                             divergence_type='Bullish',
                             interval=interval,
-                            price_data=price_data
+                            price_data=_price_data(df)
                         )
                     except Exception as e:
                         print(f"⚠️ Failed to save bullish divergence to Firebase: {e}")
+
+                # --- Proper pivot-based divergence (new method, all 4 types) ---
+                df = divergence.find_rsi_divergence_v2(df)
+
+                # Helper: get price data at the last detected pivot (not just last bar)
+                def _price_data_at(df, idx):
+                    return {
+                        'open':   float(df['Open'].iloc[idx]),
+                        'high':   float(df['High'].iloc[idx]),
+                        'low':    float(df['Low'].iloc[idx]),
+                        'close':  float(df['Close'].iloc[idx]),
+                        'volume': float(df['Volume'].iloc[idx]) if 'Volume' in df.columns else 0.0,
+                        'rsi':    float(df['RSI14'].iloc[idx])  if 'RSI14'  in df.columns else 0.0,
+                    }
+
+                v2_signals = [
+                    ('Bearish_Divergence_V2',    'bearish',        'Bearish Divergence (Pivot)'),
+                    ('Bullish_Divergence_V2',    'bullish',        'Bullish Divergence (Pivot)'),
+                    ('Hidden_Bearish_Divergence','hidden_bearish', 'Hidden Bearish Divergence'),
+                    ('Hidden_Bullish_Divergence','hidden_bullish', 'Hidden Bullish Divergence'),
+                ]
+
+                for col, div_type, label in v2_signals:
+                    if col not in df.columns:
+                        continue
+                    # Find the last bar where this divergence was flagged
+                    flagged = df[df[col] > 0]
+                    if flagged.empty:
+                        continue
+                    last_idx = df.index.get_loc(flagged.index[-1])
+                    signal_symbol = df.iloc[last_idx]['symbol'] if 'symbol' in df.columns else symbol
+                    message += (
+                        f"SYMBOL: {signal_symbol}\n{label}\n"
+                        f"Link: https://www.tradingview.com/chart/?symbol={signal_symbol}&interval={interval}"
+                    )
+                    try:
+                        firebase_db.save_divergence_signal(
+                            symbol=signal_symbol,
+                            divergence_type=div_type,
+                            interval=interval,
+                            price_data=_price_data_at(df, last_idx)
+                        )
+                        print(f"✅ {label} saved for {signal_symbol}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to save {label} to Firebase: {e}")
 
                 if message:
                     rsi_divergence_message += f"\n{message}"

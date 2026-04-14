@@ -2,6 +2,127 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+# ---------------------------------------------------------------------------
+# Proper pivot-based divergence detection (regular + hidden)
+# ---------------------------------------------------------------------------
+
+def _find_pivot_highs(series: np.ndarray, left: int, right: int):
+    """
+    Return indices of confirmed swing highs.
+    A bar at index i is a swing high if series[i] is the highest value
+    in the window [i-left … i+right].
+    """
+    pivots = []
+    for i in range(left, len(series) - right):
+        window = series[i - left: i + right + 1]
+        if series[i] == window.max() and series[i] > series[i - 1]:
+            pivots.append(i)
+    return pivots
+
+
+def _find_pivot_lows(series: np.ndarray, left: int, right: int):
+    """
+    Return indices of confirmed swing lows.
+    A bar at index i is a swing low if series[i] is the lowest value
+    in the window [i-left … i+right].
+    """
+    pivots = []
+    for i in range(left, len(series) - right):
+        window = series[i - left: i + right + 1]
+        if series[i] == window.min() and series[i] < series[i - 1]:
+            pivots.append(i)
+    return pivots
+
+
+def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
+                            rsi_ob: float = 70.0, rsi_os: float = 30.0):
+    """
+    Proper pivot-based RSI divergence detector.
+
+    Detects four divergence types:
+      - Bearish          : price higher high  + RSI lower high  (reversal warning)
+      - Bullish          : price lower low    + RSI higher low  (reversal warning)
+      - Hidden Bearish   : price lower high   + RSI higher high (trend continuation short)
+      - Hidden Bullish   : price higher low   + RSI lower low   (trend continuation long)
+
+    Both price AND RSI are compared at the same pivot bar, so the comparison
+    is structurally valid — unlike comparing separate window max/min values.
+
+    Confirmed pivots only (right bars must have already closed), so no
+    signals fire on live unclosed candles.
+
+    Parameters
+    ----------
+    df       : DataFrame with columns Close, High, Low, RSI14
+    left     : bars to the left of the pivot required to confirm it
+    right    : bars to the right of the pivot required to confirm it
+    rsi_ob   : RSI overbought threshold for regular bearish divergence
+    rsi_os   : RSI oversold threshold for regular bullish divergence
+
+    Returns
+    -------
+    df with four new columns:
+        Bearish_Divergence_V2, Bullish_Divergence_V2,
+        Hidden_Bearish_Divergence, Hidden_Bullish_Divergence
+    """
+    df = df.copy()
+    df['Bearish_Divergence_V2']    = 0.0
+    df['Bullish_Divergence_V2']    = 0.0
+    df['Hidden_Bearish_Divergence'] = 0.0
+    df['Hidden_Bullish_Divergence'] = 0.0
+
+    if 'RSI14' not in df.columns or len(df) < left + right + 2:
+        return df
+
+    rsi   = df['RSI14'].values
+    high  = df['High'].values
+    low   = df['Low'].values
+    close = df['Close'].values
+
+    pivot_highs = _find_pivot_highs(high,  left, right)
+    pivot_lows  = _find_pivot_lows(low,    left, right)
+
+    # --- Bearish & Hidden Bearish (compare consecutive pivot highs) ---
+    for i in range(1, len(pivot_highs)):
+        p1, p2 = pivot_highs[i - 1], pivot_highs[i]
+
+        price_hh = high[p2] > high[p1]   # price: higher high
+        price_lh = high[p2] < high[p1]   # price: lower high
+        rsi_lh   = rsi[p2]  < rsi[p1]    # RSI:   lower high
+        rsi_hh   = rsi[p2]  > rsi[p1]    # RSI:   higher high
+
+        # Regular bearish: price HH + RSI LH (overbought zone required)
+        if price_hh and rsi_lh and rsi[p1] >= rsi_ob:
+            df.iat[p2, df.columns.get_loc('Bearish_Divergence_V2')] = close[p2]
+
+        # Hidden bearish: price LH + RSI HH (bearish continuation)
+        if price_lh and rsi_hh:
+            df.iat[p2, df.columns.get_loc('Hidden_Bearish_Divergence')] = close[p2]
+
+    # --- Bullish & Hidden Bullish (compare consecutive pivot lows) ---
+    for i in range(1, len(pivot_lows)):
+        p1, p2 = pivot_lows[i - 1], pivot_lows[i]
+
+        price_ll = low[p2] < low[p1]    # price: lower low
+        price_hl = low[p2] > low[p1]    # price: higher low
+        rsi_hl   = rsi[p2] > rsi[p1]   # RSI:   higher low
+        rsi_ll   = rsi[p2] < rsi[p1]   # RSI:   lower low
+
+        # Regular bullish: price LL + RSI HL (oversold zone required)
+        if price_ll and rsi_hl and rsi[p1] <= rsi_os:
+            df.iat[p2, df.columns.get_loc('Bullish_Divergence_V2')] = close[p2]
+
+        # Hidden bullish: price HL + RSI LL (bullish continuation)
+        if price_hl and rsi_ll:
+            df.iat[p2, df.columns.get_loc('Hidden_Bullish_Divergence')] = close[p2]
+
+    return df
+
+# ---------------------------------------------------------------------------
+# Original (legacy) divergence — kept unchanged
+# ---------------------------------------------------------------------------
+
 def find_rsi_divergence(df, min_bars=30):
     df = df.copy()
 
