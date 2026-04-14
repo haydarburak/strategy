@@ -574,8 +574,19 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     flagged = df[df[col] > 0]
                     if flagged.empty:
                         continue
-                    last_idx = df.index.get_loc(flagged.index[-1])
+                    pivot_bar_index = flagged.index[-1]
+                    last_idx = df.index.get_loc(pivot_bar_index)
                     signal_symbol = df.iloc[last_idx]['symbol'] if 'symbol' in df.columns else symbol
+
+                    # Convert the pivot bar's index to a timezone-aware datetime
+                    import pandas as _pd
+                    from datetime import timezone as _tz
+                    pivot_dt = pivot_bar_index
+                    if isinstance(pivot_dt, _pd.Timestamp):
+                        pivot_dt = pivot_dt.to_pydatetime()
+                    if hasattr(pivot_dt, 'tzinfo') and pivot_dt.tzinfo is None:
+                        pivot_dt = pivot_dt.replace(tzinfo=_tz.utc)
+
                     message += (
                         f"SYMBOL: {signal_symbol}\n{label}\n"
                         f"Link: https://www.tradingview.com/chart/?symbol={signal_symbol}&interval={interval}"
@@ -585,7 +596,8 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             symbol=signal_symbol,
                             divergence_type=div_type,
                             interval=interval,
-                            price_data=_price_data_at(df, last_idx)
+                            price_data=_price_data_at(df, last_idx),
+                            pivot_timestamp=pivot_dt,
                         )
                         print(f"✅ {label} saved for {signal_symbol}")
                     except Exception as e:

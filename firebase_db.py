@@ -120,53 +120,107 @@ class FirebaseDB:
             print(f"❌ Error saving trading signal: {e}")
             return None
     
-    def save_divergence_signal(self, 
+    def save_divergence_signal(self,
                               symbol: str,
-                              divergence_type: str,  # 'Bullish' or 'Bearish'
+                              divergence_type: str,
                               interval: str,
-                              price_data: Dict[str, float] = None) -> Optional[str]:
+                              price_data: Dict[str, float] = None,
+                              pivot_timestamp: Optional[datetime] = None,
+                              ttl_hours: int = 48) -> Optional[str]:
         """
-        Save RSI divergence signal to Firestore
-        
+        Save RSI divergence signal to Firestore.
+
+        Before saving, any existing ACTIVE signal for the same
+        symbol + divergence_type + interval whose pivot_timestamp differs
+        from the new one is expired automatically.  This prevents stale
+        historical pivots from staying "ACTIVE" across multiple bot runs.
+
         Args:
-            symbol: Trading symbol
-            divergence_type: 'Bullish' or 'Bearish'
-            interval: Timeframe
-            price_data: Price data at divergence point
-            
+            symbol:          Trading symbol  (e.g. 'NASDAQ:GOOGL')
+            divergence_type: One of 'bullish', 'bearish', 'hidden_bullish', 'hidden_bearish'
+            interval:        Timeframe string (e.g. '1H', '4H', '1D')
+            price_data:      OHLCV + RSI dict at the pivot bar
+            pivot_timestamp: The actual datetime of the pivot bar (not now).
+                             Pass this so duplicate runs don't re-save the same pivot.
+            ttl_hours:       Automatically expire signals older than this many hours
+                             (default 48 h — keeps signals visible for ~2 days).
+
         Returns:
-            str: Document ID of the saved divergence signal, None if failed
+            str: Document ID of the saved signal, or None if skipped / failed.
         """
         if not self.is_connected():
             print("❌ Firebase not connected. Divergence signal not saved.")
             return None
-            
+
         try:
             exchange, ticker = self._parse_symbol(symbol)
-            
+            now = datetime.now(timezone.utc)
+
+            # ------------------------------------------------------------------
+            # 1. Expire any ACTIVE signals for this symbol+type+interval that
+            #    are either (a) too old or (b) reference a different pivot bar.
+            # ------------------------------------------------------------------
+            collection = self.db.collection('divergence_signals')
+            stale_query = (collection
+                           .where('symbol', '==', symbol)
+                           .where('divergence_type', '==', divergence_type)
+                           .where('interval', '==', interval)
+                           .where('status', '==', 'ACTIVE'))
+
+            for stale_doc in stale_query.stream():
+                stale_data = stale_doc.to_dict()
+                stale_ts = stale_data.get('pivot_timestamp') or stale_data.get('created_at')
+
+                # Expire if older than TTL
+                age_hours = (now - stale_ts).total_seconds() / 3600 if stale_ts else ttl_hours + 1
+                is_too_old = age_hours > ttl_hours
+
+                # Expire if it belongs to a different pivot bar
+                is_different_pivot = (
+                    pivot_timestamp is not None
+                    and stale_data.get('pivot_timestamp') is not None
+                    and abs((pivot_timestamp - stale_data['pivot_timestamp']).total_seconds()) > 3600
+                )
+
+                if is_too_old or is_different_pivot:
+                    stale_doc.reference.update({'status': 'EXPIRED', 'expired_at': now})
+                    print(f"⏰ Expired stale {divergence_type} signal for {symbol} (age {age_hours:.1f}h)")
+                elif stale_data.get('pivot_timestamp') == pivot_timestamp:
+                    # Exact same pivot already saved — skip duplicate
+                    print(f"⏭️  Skipping duplicate {divergence_type} pivot for {symbol}")
+                    return stale_doc.id
+
+            # ------------------------------------------------------------------
+            # 2. Save the new signal.
+            # ------------------------------------------------------------------
             divergence_data = {
-                'timestamp': datetime.now(timezone.utc),
-                'symbol': symbol,
-                'exchange': exchange,
-                'ticker': ticker,
+                'timestamp':       now,
+                'pivot_timestamp': pivot_timestamp or now,
+                'symbol':          symbol,
+                'exchange':        exchange,
+                'ticker':          ticker,
                 'divergence_type': divergence_type,
-                'interval': interval,
-                'price_data': price_data or {},
-                'status': 'ACTIVE',
-                'created_at': datetime.now(timezone.utc),
-                'chart_url': f"https://www.tradingview.com/chart/?symbol={symbol}&interval={interval}"
+                'interval':        interval,
+                'price_data':      price_data or {},
+                'status':          'ACTIVE',
+                'created_at':      now,
+                'expires_at':      datetime.fromtimestamp(
+                                       now.timestamp() + ttl_hours * 3600, tz=timezone.utc
+                                   ),
+                'chart_url': (
+                    f"https://www.tradingview.com/chart/"
+                    f"?symbol={symbol}&interval={interval}"
+                ),
             }
-            
-            # Add to divergence_signals collection
+
             doc_ref = self.db.collection('divergence_signals').add(divergence_data)
             signal_id = doc_ref[1].id
-            
-            # Update divergence statistics
+
             self._update_divergence_stats(exchange, divergence_type, interval)
-            
+
             print(f"✅ Divergence signal saved: {signal_id}")
             return signal_id
-            
+
         except Exception as e:
             print(f"❌ Error saving divergence signal: {e}")
             return None
