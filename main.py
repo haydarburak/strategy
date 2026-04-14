@@ -575,7 +575,7 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                 # having multiple contradictory signals (bullish + bearish) on the
                 # same card is confusing and usually means the algorithm found
                 # different old pivot pairs. Only the freshest one is actionable.
-                best_candidate = None  # (pivot_bar_index, last_idx, div_type, label)
+                best_candidate = None  # (pivot_bar_index, last_idx, div_type, label, col)
 
                 for col, div_type, label in v2_signal_defs:
                     if col not in df.columns:
@@ -587,10 +587,10 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     last_idx = df.index.get_loc(pivot_bar_index)
 
                     if best_candidate is None or pivot_bar_index > best_candidate[0]:
-                        best_candidate = (pivot_bar_index, last_idx, div_type, label)
+                        best_candidate = (pivot_bar_index, last_idx, div_type, label, col)
 
                 if best_candidate is not None:
-                    pivot_bar_index, last_idx, div_type, label = best_candidate
+                    pivot_bar_index, last_idx, div_type, label, col = best_candidate
                     signal_symbol = df.iloc[last_idx]['symbol'] if 'symbol' in df.columns else symbol
 
                     # Convert pivot bar index to timezone-aware datetime
@@ -600,8 +600,12 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                     if hasattr(pivot_dt, 'tzinfo') and pivot_dt.tzinfo is None:
                         pivot_dt = pivot_dt.replace(tzinfo=_tz.utc)
 
+                    # Pull the pivot comparison metadata (p1/p2 price & RSI + reason)
+                    div_meta = df.attrs.get('divergence_meta', {}).get(col, {})
+
                     message += (
                         f"SYMBOL: {signal_symbol}\n{label}\n"
+                        f"{div_meta.get('reason', '')}\n"
                         f"Link: https://www.tradingview.com/chart/?symbol={signal_symbol}&interval={interval}"
                     )
                     try:
@@ -611,8 +615,9 @@ def analsys(type, interval, kline_interval, interval_str, lookback, relevant):
                             interval=interval,
                             price_data=_price_data_at(df, last_idx),
                             pivot_timestamp=pivot_dt,
+                            divergence_meta=div_meta,
                         )
-                        print(f"✅ {label} saved for {signal_symbol}")
+                        print(f"✅ {label} saved for {signal_symbol} — {div_meta.get('reason', '')}")
                     except Exception as e:
                         print(f"⚠️ Failed to save {label} to Firebase: {e}")
 

@@ -126,6 +126,7 @@ class FirebaseDB:
                               interval: str,
                               price_data: Dict[str, float] = None,
                               pivot_timestamp: Optional[datetime] = None,
+                              divergence_meta: Optional[Dict] = None,
                               ttl_hours: int = 48) -> Optional[str]:
         """
         Save RSI divergence signal to Firestore.
@@ -202,6 +203,8 @@ class FirebaseDB:
                 'divergence_type': divergence_type,
                 'interval':        interval,
                 'price_data':      price_data or {},
+                # Pivot comparison: p1 & p2 values + human-readable reason
+                'divergence_meta': divergence_meta or {},
                 'status':          'ACTIVE',
                 'created_at':      now,
                 'expires_at':      datetime.fromtimestamp(

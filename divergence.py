@@ -75,15 +75,29 @@ def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
 
     Returns
     -------
-    df with four new columns:
+    df with four new signal columns (float, 0 = no signal, >0 = close price at p2):
         Bearish_Divergence_V2, Bullish_Divergence_V2,
         Hidden_Bearish_Divergence, Hidden_Bullish_Divergence
+
+    Plus a metadata dict stored on df.attrs['divergence_meta']:
+        {
+          col_name: {
+            'p1_price': float, 'p1_rsi': float,
+            'p2_price': float, 'p2_rsi': float,
+            'price_label': str,   # e.g. 'Higher High'
+            'rsi_label':   str,   # e.g. 'Lower High'
+            'reason':      str,   # human-readable one-liner
+          }
+        }
+    Only the most recently detected pivot pair per column is stored.
     """
     df = df.copy()
     df['Bearish_Divergence_V2']    = 0.0
     df['Bullish_Divergence_V2']    = 0.0
     df['Hidden_Bearish_Divergence'] = 0.0
     df['Hidden_Bullish_Divergence'] = 0.0
+    meta: dict = {}          # populated below, stored in df.attrs
+    df.attrs['divergence_meta'] = meta
 
     if 'RSI14' not in df.columns or len(df) < left + right + 2:
         return df
@@ -112,13 +126,39 @@ def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
 
         # Regular bearish: price HH + RSI LH — must start from overbought territory
         if price_hh and rsi_lh and rsi[p1] >= rsi_ob:
-            df.iat[p2, df.columns.get_loc('Bearish_Divergence_V2')] = close[p2]
+            col = 'Bearish_Divergence_V2'
+            df.iat[p2, df.columns.get_loc(col)] = close[p2]
+            meta[col] = {
+                'p1_price': round(float(high[p1]), 4),
+                'p1_rsi':   round(float(rsi[p1]),  2),
+                'p2_price': round(float(high[p2]), 4),
+                'p2_rsi':   round(float(rsi[p2]),  2),
+                'price_label': 'Higher High',
+                'rsi_label':   'Lower High',
+                'reason': (
+                    f"Price made a Higher High ({high[p1]:.2f} → {high[p2]:.2f}) "
+                    f"but RSI made a Lower High ({rsi[p1]:.1f} → {rsi[p2]:.1f}) "
+                    f"from overbought — momentum failing at the top."
+                ),
+            }
 
         # Hidden bearish: price LH + RSI HH — p2 RSI must still be above midline
-        # (i.e. price hasn't broken out but RSI is recovering above 45 → showing
-        #  the bounce is fake and downtrend will resume)
         if price_lh and rsi_hh and rsi[p2] >= hidden_bear_rsi_min:
-            df.iat[p2, df.columns.get_loc('Hidden_Bearish_Divergence')] = close[p2]
+            col = 'Hidden_Bearish_Divergence'
+            df.iat[p2, df.columns.get_loc(col)] = close[p2]
+            meta[col] = {
+                'p1_price': round(float(high[p1]), 4),
+                'p1_rsi':   round(float(rsi[p1]),  2),
+                'p2_price': round(float(high[p2]), 4),
+                'p2_rsi':   round(float(rsi[p2]),  2),
+                'price_label': 'Lower High',
+                'rsi_label':   'Higher High',
+                'reason': (
+                    f"Price made a Lower High ({high[p1]:.2f} → {high[p2]:.2f}) "
+                    f"but RSI made a Higher High ({rsi[p1]:.1f} → {rsi[p2]:.1f}) "
+                    f"— bounce is weakening while RSI recovered, downtrend continues."
+                ),
+            }
 
     # --- Bullish & Hidden Bullish (compare consecutive pivot lows) ---
     for i in range(1, len(pivot_lows)):
@@ -135,13 +175,41 @@ def find_rsi_divergence_v2(df, left: int = 5, right: int = 5,
 
         # Regular bullish: price LL + RSI HL — must start from oversold territory
         if price_ll and rsi_hl and rsi[p1] <= rsi_os:
-            df.iat[p2, df.columns.get_loc('Bullish_Divergence_V2')] = close[p2]
+            col = 'Bullish_Divergence_V2'
+            df.iat[p2, df.columns.get_loc(col)] = close[p2]
+            meta[col] = {
+                'p1_price': round(float(low[p1]), 4),
+                'p1_rsi':   round(float(rsi[p1]), 2),
+                'p2_price': round(float(low[p2]), 4),
+                'p2_rsi':   round(float(rsi[p2]), 2),
+                'price_label': 'Lower Low',
+                'rsi_label':   'Higher Low',
+                'reason': (
+                    f"Price made a Lower Low ({low[p1]:.2f} → {low[p2]:.2f}) "
+                    f"but RSI made a Higher Low ({rsi[p1]:.1f} → {rsi[p2]:.1f}) "
+                    f"from oversold — sellers exhausted, reversal likely."
+                ),
+            }
 
         # Hidden bullish: price HL + RSI LL — p2 RSI must still be below midline
         # (i.e. price is making higher lows in an uptrend while RSI pulled back
         #  below 55 → the dip is healthy, trend continues up)
         if price_hl and rsi_ll and rsi[p2] <= hidden_bull_rsi_max:
-            df.iat[p2, df.columns.get_loc('Hidden_Bullish_Divergence')] = close[p2]
+            col = 'Hidden_Bullish_Divergence'
+            df.iat[p2, df.columns.get_loc(col)] = close[p2]
+            meta[col] = {
+                'p1_price': round(float(low[p1]), 4),
+                'p1_rsi':   round(float(rsi[p1]), 2),
+                'p2_price': round(float(low[p2]), 4),
+                'p2_rsi':   round(float(rsi[p2]), 2),
+                'price_label': 'Higher Low',
+                'rsi_label':   'Lower Low',
+                'reason': (
+                    f"Price made a Higher Low ({low[p1]:.2f} → {low[p2]:.2f}) "
+                    f"but RSI made a Lower Low ({rsi[p1]:.1f} → {rsi[p2]:.1f}) "
+                    f"— dip is shallower while RSI resets, uptrend continues."
+                ),
+            }
 
     return df
 
