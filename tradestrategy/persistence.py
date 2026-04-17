@@ -26,6 +26,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 from .patterns import Direction, Signal
+from .divergence import DivergenceSignal
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,98 @@ class FirestoreDB:
             logger.error(f'save_index_status failed for {index_exchange}:{index_symbol}: {e}')
             return None
 
+    def save_divergence_signal(
+        self,
+        symbol: str,
+        exchange: str,
+        signal: DivergenceSignal,
+        interval: str,
+        price_data: Dict[str, float],
+        pivot_timestamp=None,
+    ) -> Optional[str]:
+        """
+        Persist a detected RSI divergence.
+
+        Parameters
+        ----------
+        symbol          : ticker, e.g. 'AAPL'
+        exchange        : e.g. 'NASDAQ'
+        signal          : DivergenceSignal from divergence.find_divergences()
+        interval        : timeframe string, e.g. '1D'
+        price_data      : {'open', 'high', 'low', 'close', 'volume', 'rsi'}
+        pivot_timestamp : datetime of the p2 pivot bar (optional)
+
+        Returns
+        -------
+        Firestore document ID on success, None on failure / not connected.
+        """
+        if not self.connected:
+            return None
+        try:
+            now = datetime.now(timezone.utc)
+            doc: Dict[str, Any] = {
+                'timestamp':      now,
+                'symbol':         symbol,
+                'exchange':       exchange,
+                'full_symbol':    f'{exchange}:{symbol}',
+                'divergence_type': signal.div_type,
+                'label':          signal.label,
+                'reason':         signal.reason,
+                'interval':       interval,
+                'price_data':     price_data,
+                'meta':           signal.meta,
+                'status':         'ACTIVE',
+                'created_at':     now,
+                'chart_url': (
+                    f'https://www.tradingview.com/chart/'
+                    f'?symbol={exchange}:{symbol}&interval={interval}'
+                ),
+            }
+            if pivot_timestamp is not None:
+                doc['pivot_timestamp'] = pivot_timestamp
+
+            _, ref = self.db.collection('divergence_signals').add(doc)
+            self._bump_divergence_stats(exchange, signal.div_type, interval)
+            logger.info(
+                f'Divergence saved [{ref.id}]: {exchange}:{symbol} {signal.div_type}'
+            )
+            return ref.id
+        except Exception as e:
+            logger.error(f'save_divergence_signal failed for {exchange}:{symbol}: {e}')
+            return None
+
     # ── internal helpers ───────────────────────────────────────────────────────
+
+    def _bump_divergence_stats(
+        self, exchange: str, div_type: str, interval: str
+    ) -> None:
+        try:
+            today = datetime.now(timezone.utc).date().isoformat()
+            ref   = self.db.collection('divergence_statistics').document(today)
+            snap  = ref.get()
+
+            data: Dict[str, Any] = snap.to_dict() if snap.exists else {
+                'date':      today,
+                'total':     0,
+                'types':     {},
+                'exchanges': {},
+                'intervals': {},
+            }
+
+            data['total'] = data.get('total', 0) + 1
+            for bucket_key, value in [
+                ('types',     div_type),
+                ('exchanges', exchange),
+                ('intervals', interval),
+            ]:
+                bucket = data.get(bucket_key, {})
+                bucket[value] = bucket.get(value, 0) + 1
+                data[bucket_key] = bucket
+
+            data['updated_at'] = datetime.now(timezone.utc)
+            ref.set(data)
+        except Exception as e:
+            logger.error(f'_bump_divergence_stats failed: {e}')
 
     def _bump_daily_stats(
         self, exchange: str, signal: Signal, interval: str

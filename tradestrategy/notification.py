@@ -18,6 +18,7 @@ from typing import Optional
 import requests
 
 from .patterns import Direction, Signal
+from .divergence import DivergenceSignal
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,92 @@ def send_signal(
     if chart_png is not None:
         return _post_photo(token, chat_id, text, chart_png)
     return _post_message(token, chat_id, text)
+
+
+def send_divergence_alert(
+    symbol: str,
+    exchange: str,
+    signal: DivergenceSignal,
+    interval: str,
+    chart_png=None,
+) -> bool:
+    """
+    Send a single divergence alert.
+
+    Parameters
+    ----------
+    symbol     : ticker, e.g. 'AAPL'
+    exchange   : e.g. 'NASDAQ'
+    signal     : DivergenceSignal from divergence.find_divergences()
+    interval   : timeframe string shown in the TradingView link, e.g. 'D'
+    chart_png  : optional BytesIO of pre-rendered PNG chart
+
+    Returns
+    -------
+    True on HTTP 200, False otherwise.
+    """
+    token, chat_id = _credentials()
+    if token is None:
+        return False
+
+    type_emoji = {
+        'bearish':        '🔴',
+        'bullish':        '🟢',
+        'hidden_bearish': '🟠',
+        'hidden_bullish': '🔵',
+    }.get(signal.div_type, '⚪')
+
+    tv_link = f'https://www.tradingview.com/chart/?symbol={exchange}:{symbol}&interval={interval}'
+    rsi_meta = (
+        f"RSI: {signal.meta.get('p1_rsi', '?')} → {signal.meta.get('p2_rsi', '?')}"
+        if signal.meta else ''
+    )
+
+    text = (
+        f'{type_emoji} <b>{signal.label}</b>\n'
+        f'Symbol : <code>{exchange}:{symbol}</code>\n'
+        f'Close  : <code>{signal.price:.4f}</code>\n'
+        f'{rsi_meta}\n'
+        f'─────────────────────\n'
+        f'{signal.reason}\n'
+        f'─────────────────────\n'
+        f'<a href="{tv_link}">📊 Open on TradingView</a>'
+    )
+
+    if chart_png is not None:
+        return _post_photo(token, chat_id, text, chart_png)
+    return _post_message(token, chat_id, text)
+
+
+def send_divergence_batch(alerts: list[dict]) -> bool:
+    """
+    Send a summary message listing all divergences found in the current scan.
+
+    Each entry in `alerts` must have keys:
+        exchange, symbol, label, reason, interval
+
+    Returns True if the message was sent successfully.
+    """
+    if not alerts:
+        return False
+
+    token, chat_id = _credentials()
+    if token is None:
+        return False
+
+    lines = ['📋 <b>RSI Divergence Scan — Summary</b>\n']
+    for a in alerts:
+        tv_link = (
+            f'https://www.tradingview.com/chart/'
+            f'?symbol={a["exchange"]}:{a["symbol"]}&interval={a["interval"]}'
+        )
+        lines.append(
+            f'• <code>{a["exchange"]}:{a["symbol"]}</code> — {a["label"]}\n'
+            f'  {a["reason"]}\n'
+            f'  <a href="{tv_link}">chart</a>'
+        )
+
+    return _post_message(token, chat_id, '\n'.join(lines))
 
 
 def send_index_status(

@@ -37,7 +37,7 @@ from websocket import WebSocketTimeoutException
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tradestrategy import add_all, generate_signals
 from tradestrategy.patterns import Direction, Signal
-from tradestrategy import charts, notification, persistence
+from tradestrategy import charts, notification, persistence, divergence
 
 # ── configuration ──────────────────────────────────────────────────────────────
 
@@ -57,6 +57,19 @@ MARKET_INDICES = {
 }
 
 _EMA_COLS = ['EMA20', 'EMA50', 'EMA100', 'EMA200']
+
+# Portfolio watchlist for divergence scan — same as main.py HOLDING_STOCKS.
+# Exchange prefix is required so tvDatafeed fetches from the correct source.
+HOLDING_STOCKS = [
+    'NASDAQ:GOOGL', 'NASDAQ:AMZN', 'NASDAQ:NVDA', 'NASDAQ:AMD',  'NASDAQ:PYPL',
+    'NYSE:MMM',     'NYSE:BTI',    'NYSE:CVX',    'NYSE:ENB',    'XETR:MBG',
+    'NASDAQ:MSFT',  'NYSE:O',      'NYSE:TSM',    'NYSE:TM',     'NYSE:VZ',
+    'NASDAQ:ACLS',  'NASDAQ:MTCH', 'NYSE:SLB',    'XETR:BAYN',  'NYSE:EL',
+    'NASDAQ:INTC',  'NASDAQ:NWL',  'NASDAQ:PSEC', 'NYSE:VFC',   'XETR:VOW3',
+    'NYSE:T',       'NYSE:MO',     'NYSE:ORCL',   'NYSE:SPOT',  'NASDAQ:PLTR',
+    'NASDAQ:META',  'XETR:DB1',    'XETR:BAS',    'XETR:ASME', 'XETR:VIB3',
+    'XETR:PFE',     'XETR:ITB',   'XETR:UNVB',   'NYSE:BABA',
+]
 
 # ── symbol universe (same logic as getdata_stock.py) ──────────────────────────
 
@@ -333,7 +346,110 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
                                      f'?symbol={exchange}:{symbol}&interval=D'),
                 })
 
-    # ── 3. save & report ──────────────────────────────────────────────────────
+    # ── 3. divergence scan (portfolio watchlist) ──────────────────────────────
+    print(f"\n{'─'*55}")
+    print(f"Divergence scan — {len(HOLDING_STOCKS)} holding stocks …\n")
+
+    div_results:  list[dict] = []
+    div_alerts:   list[dict] = []   # collected for batch Telegram summary
+
+    for entry in tqdm(HOLDING_STOCKS, desc='divergence', unit='sym'):
+        try:
+            exch, sym = entry.split(':', 1)
+        except ValueError:
+            errors.append(f"{entry}  [bad format in HOLDING_STOCKS]")
+            continue
+
+        df_raw = fetch_ohlcv(sym, exch, n_bars)
+        if df_raw.empty:
+            errors.append(f"{exch}:{sym}  [divergence: no data]")
+            continue
+
+        try:
+            df = add_all(df_raw)
+        except ValueError as e:
+            errors.append(f"{exch}:{sym}  [divergence indicator error: {e}]")
+            continue
+
+        sigs = divergence.find_divergences(df)
+        if not sigs:
+            continue
+
+        # follow main.py: keep only the single most recently detected pivot
+        sig = sigs[-1]
+
+        # resolve the pivot bar timestamp if the original datetime is available
+        pivot_ts = None
+        if 'datetime' in df.columns:
+            try:
+                pivot_ts = pd.Timestamp(df['datetime'].iloc[sig.bar_index])
+                if pivot_ts.tzinfo is None:
+                    pivot_ts = pivot_ts.tz_localize('UTC')
+            except Exception:
+                pass
+
+        # ── chart ─────────────────────────────────────────────────────────────
+        fig = charts.create_divergence_chart(df, sym, exch, sig)
+        try:
+            png = charts.figure_to_png(fig)
+        except Exception as e:
+            print(f"  ⚠️  Divergence chart failed for {exch}:{sym}: {e}")
+            png = None
+
+        # ── Telegram ──────────────────────────────────────────────────────────
+        notification.send_divergence_alert(sym, exch, sig, '1D', png)
+
+        # ── Firebase ──────────────────────────────────────────────────────────
+        price_data = {
+            'open':   float(df['Open'].iloc[sig.bar_index]),
+            'high':   float(df['High'].iloc[sig.bar_index]),
+            'low':    float(df['Low'].iloc[sig.bar_index]),
+            'close':  float(df['Close'].iloc[sig.bar_index]),
+            'volume': float(df['Volume'].iloc[sig.bar_index]) if 'Volume' in df.columns else 0.0,
+            'rsi':    float(df['RSI14'].iloc[sig.bar_index]) if 'RSI14' in df.columns else 0.0,
+        }
+        doc_id = db.save_divergence_signal(
+            symbol          = sym,
+            exchange        = exch,
+            signal          = sig,
+            interval        = '1D',
+            price_data      = price_data,
+            pivot_timestamp = pivot_ts,
+        )
+        if doc_id:
+            print(f"  🔥 Divergence Firebase: {doc_id}")
+
+        row = {
+            'date':       today,
+            'exchange':   exch,
+            'symbol':     sym,
+            'div_type':   sig.div_type,
+            'label':      sig.label,
+            'bar_index':  sig.bar_index,
+            'price':      round(sig.price, 4),
+            'p1_rsi':     sig.meta.get('p1_rsi', ''),
+            'p2_rsi':     sig.meta.get('p2_rsi', ''),
+            'reason':     sig.reason,
+            'firebase_id': doc_id or '',
+            'tv_link':    f'https://www.tradingview.com/chart/?symbol={exch}:{sym}&interval=D',
+        }
+        div_results.append(row)
+        div_alerts.append({'exchange': exch, 'symbol': sym,
+                           'label': sig.label, 'reason': sig.reason,
+                           'interval': 'D'})
+
+    # send a single batch Telegram summary for all divergences
+    notification.send_divergence_batch(div_alerts)
+
+    # save divergence results to CSV
+    if div_results:
+        div_path = os.path.join(RESULTS_DIR, f'divergences_{today}.csv')
+        pd.DataFrame(div_results).to_csv(div_path, index=False)
+        print(f"\n✅  {len(div_results)} divergence(s) saved → {div_path}")
+    else:
+        print("\nNo divergences detected in holding stocks.")
+
+    # ── 4. save & report ──────────────────────────────────────────────────────
 
     print(f"\n{'═'*55}")
 

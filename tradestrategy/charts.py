@@ -11,6 +11,7 @@ import plotly.io as pio
 from plotly.subplots import make_subplots
 
 from .patterns import Direction, Signal
+from .divergence import DivergenceSignal
 
 _TAIL_BARS = 50
 
@@ -139,6 +140,111 @@ def create_signal_chart(
             font=dict(size=14),
         ),
         height=880,
+        template='plotly_dark',
+        showlegend=True,
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=55, r=40, t=65, b=30),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                    xanchor='right', x=1, font=dict(size=10)),
+    )
+    return fig
+
+
+def create_divergence_chart(
+    df: pd.DataFrame,
+    symbol: str,
+    exchange: str,
+    signal: DivergenceSignal,
+    tail_bars: int = 80,
+) -> go.Figure:
+    """
+    Build a 2-pane chart highlighting an RSI divergence.
+
+    Pane 1 — Candlestick + EMA stack.
+              p1 pivot marked with a grey dashed vertical line.
+              p2 (signal) pivot marked with a coloured vertical line.
+
+    Pane 2 — RSI14 with 30 / 70 reference lines.
+              The two pivot bars are annotated with their RSI values.
+    """
+    tail     = df.tail(tail_bars).copy()
+    full_sym = f'{exchange}:{symbol}'
+
+    is_bullish = signal.div_type in ('bullish', 'hidden_bullish')
+    sig_color  = '#26a69a' if is_bullish else '#ef5350'
+
+    # map bar_index (absolute position in full df) to tail position
+    tail_start = len(df) - tail_bars
+    p2_tail = signal.bar_index - tail_start  # may be negative if outside tail window
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        row_heights=[0.62, 0.38],
+        subplot_titles=('Price + EMA', 'RSI (14)'),
+    )
+
+    # ── Pane 1: candlestick ────────────────────────────────────────────────────
+    fig.add_trace(go.Candlestick(
+        x=tail.index,
+        open=tail['Open'], high=tail['High'],
+        low=tail['Low'],   close=tail['Close'],
+        name='Price',
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        increasing_fillcolor='#26a69a',  decreasing_fillcolor='#ef5350',
+    ), row=1, col=1)
+
+    for ema_col, color in _EMA_PALETTE.items():
+        if ema_col in tail.columns:
+            fig.add_trace(go.Scatter(
+                x=tail.index, y=tail[ema_col],
+                mode='lines', name=ema_col,
+                line=dict(color=color, width=1.2),
+            ), row=1, col=1)
+
+    # mark the p2 pivot bar (signal bar) with a vertical line
+    if 0 <= p2_tail < len(tail):
+        x_p2 = tail.index[p2_tail]
+        for row in (1, 2):
+            fig.add_vline(
+                x=x_p2 if isinstance(x_p2, (int, float)) else str(x_p2),
+                line_dash='dash', line_color=sig_color,
+                line_width=1.5, row=row, col=1,
+            )
+
+    # ── Pane 2: RSI ────────────────────────────────────────────────────────────
+    if 'RSI14' in tail.columns:
+        fig.add_trace(go.Scatter(
+            x=tail.index, y=tail['RSI14'],
+            mode='lines', name='RSI 14',
+            line=dict(color='#ce93d8', width=1.5),
+        ), row=2, col=1)
+
+        for level, dash_color in ((70, 'rgba(239,83,80,0.4)'), (30, 'rgba(38,166,154,0.4)')):
+            fig.add_hline(y=level, line_dash='dot', line_color=dash_color, row=2, col=1)
+
+        # annotate RSI values at p1 and p2 if within the tail window
+        p1_rsi = signal.meta.get('p1_rsi')
+        p2_rsi = signal.meta.get('p2_rsi')
+        if p2_rsi is not None and 0 <= p2_tail < len(tail):
+            fig.add_annotation(
+                x=tail.index[p2_tail], y=float(p2_rsi),
+                text=f'RSI {p2_rsi}', showarrow=True,
+                arrowhead=2, arrowcolor=sig_color,
+                font=dict(color=sig_color, size=10),
+                row=2, col=1,
+            )
+
+    type_emoji = {'bearish': '🔴', 'bullish': '🟢',
+                  'hidden_bearish': '🟠', 'hidden_bullish': '🔵'}.get(signal.div_type, '⚪')
+
+    fig.update_layout(
+        title=dict(
+            text=f'{type_emoji} {signal.label}  —  {full_sym}',
+            font=dict(size=14),
+        ),
+        height=800,
         template='plotly_dark',
         showlegend=True,
         xaxis_rangeslider_visible=False,
