@@ -1,0 +1,48 @@
+# Build tools
+setuptools>=70.0.0
+wheel>=0.42.0
+Cython>=3.0.0
+
+# Firebase
+firebase-admin>=6.2.0
+grpcio>=1.48.0
+grpcio-status>=1.48.0
+
+# Numerical / data
+numpy>=2.2.6
+scipy>=1.10.0
+pandas>=2.0.0,<3.0.0
+pandas_ta==0.4.71b0
+numba>=0.59.0
+
+# Visualization — kaleido 0.2.1 required for plotly static image export
+plotly>=5.17.0
+kaleido==0.2.1
+
+# Trading data
+tradingview-screener>=2.5.0
+
+# HTTP / WebSocket
+requests>=2.31.0
+websocket-client>=1.7.0
+
+# Utilities
+tqdm>=4.66.0
+
+# Date / time
+python-dateutil>=2.8.2
+pytz>=2024.1
+tzdata>=2024.1
+
+# Network / security
+certifi>=2024.2.2
+cryptography>=42.0.0
+
+# Misc
+packaging>=23.2
+typing_extensions>=4.9.0
+urllib3>=2.1.0
+lxml>=5.1.0
+
+# tvDatafeed — install last (git dependency)
+git+https://github.com/rongardF/tvdatafeed.git
