@@ -1,8 +1,8 @@
 name: Run S&P 500 Strategy Daily
 
 on:
-  schedule:
-    - cron: "0 21 * * 1-5"  # 9 PM UTC = 11 PM German time, Monday–Friday (after US market close)
+  #schedule:
+  #  - cron: "0 21 * * 1-5"  # 9 PM UTC = 11 PM German time, Monday–Friday (after US market close)
   workflow_dispatch:          # Allow manual trigger from GitHub Actions tab
 
 jobs:
