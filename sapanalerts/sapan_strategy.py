@@ -186,8 +186,6 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         c2 = df.iloc[i - 2]   # reversal
         c1 = df.iloc[i - 3]   # prior bar
 
-        ema20  = c2["ema20"]
-        ema100 = c2["ema100"]
         atr    = c3["atr"]
 
         sig   = 0
@@ -218,33 +216,36 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                 continue
 
             # ── Filters 2 & 3: Pattern + Confirmation ───────
-            rev_body_above = _bb(c2) > ema20
-            rev_wick_below = c2["Low"] < ema20
-            rev_below_c1   = c2["Low"] < c1["Low"]
+            # EMA20 → EMA50 → EMA100 → EMA200 sırasıyla denenır,
+            # ilk eşleşen EMA ve formasyon kabul edilir.
             conf_bull      = _bull(c3)
             conf_above_rev = c3["Close"] > c2["High"]
+            rev_below_c1   = c2["Low"] < c1["Low"]
 
-            # 2-candle original
-            if (rev_body_above and rev_wick_below and rev_below_c1
-                    and conf_bull and conf_above_rev):
-                sig, stype = 1, "2c-original-long"
+            for ema_p in (20, 50, 100, 200):
+                ema_val = c2[f"ema{ema_p}"]
+                lbl     = f"ema{ema_p}"
 
-            # 2-candle body-pierce (body straddles EMA)
-            elif (_bb(c2) < ema20 < _bt(c2)
-                  and c2["Low"] < c1["Low"]
-                  and conf_bull and conf_above_rev):
-                sig, stype = 1, "2c-body-pierce-long"
+                rev_body_above = _bb(c2) > ema_val
+                rev_wick_below = c2["Low"] < ema_val
 
-            # 2-candle inside-bar
-            elif (c2["High"] < c1["High"] and c2["Low"] < c1["Low"]
-                  and rev_body_above and rev_wick_below
-                  and conf_bull and conf_above_rev):
-                sig, stype = 1, "2c-inside-long"
+                if (rev_body_above and rev_wick_below and rev_below_c1
+                        and conf_bull and conf_above_rev):
+                    sig, stype = 1, f"2c-original-long-{lbl}"; break
 
-            # 1-candle pinbar
-            elif (_is_pinbar_long(c2, ema20, ratio)
-                  and conf_bull and c3["Low"] > c2["Low"] and c3["Close"] > c2["High"]):
-                sig, stype = 1, "1c-pinbar-long"
+                if (_bb(c2) < ema_val < _bt(c2)
+                        and rev_below_c1 and conf_bull and conf_above_rev):
+                    sig, stype = 1, f"2c-body-pierce-long-{lbl}"; break
+
+                if (c2["High"] < c1["High"] and rev_below_c1
+                        and rev_body_above and rev_wick_below
+                        and conf_bull and conf_above_rev):
+                    sig, stype = 1, f"2c-inside-long-{lbl}"; break
+
+                if (_is_pinbar_long(c2, ema_val, ratio)
+                        and conf_bull and c3["Low"] > c2["Low"]
+                        and c3["Close"] > c2["High"]):
+                    sig, stype = 1, f"1c-pinbar-long-{lbl}"; break
 
             if sig == 1:
                 entry = c3["High"]    # stop buy at confirmation high
@@ -260,9 +261,13 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                         filter_stats["atr"] += 1; sig = 0
 
                     # ── Filter 6: Higher lows ───────────────
+                    # Herhangi bir EMA'ya dokunuş → istisna geçerli
                     if sig == 1:
-                        ema100_touch = c2["Low"] <= ema100 * 1.01
-                        higher_low_ok = (c2["Low"] > last_rev_low_long) or ema100_touch
+                        any_ema_touch = any(
+                            c2["Low"] <= c2[f"ema{p}"] * 1.01
+                            for p in (20, 50, 100, 200)
+                        )
+                        higher_low_ok = (c2["Low"] > last_rev_low_long) or any_ema_touch
                         if not higher_low_ok:
                             filter_stats["higher_low"] += 1; sig = 0
 
@@ -313,29 +318,34 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                 targets.append(None); stypes.append(None)
                 continue
 
-            rev_body_below = _bt(c2) < ema20
-            rev_wick_above = c2["High"] > ema20
-            rev_above_c1   = c2["High"] > c1["High"]
             conf_bear      = _bear(c3)
             conf_below_rev = c3["Close"] < c2["Low"]
+            rev_above_c1   = c2["High"] > c1["High"]
 
-            if (rev_body_below and rev_wick_above and rev_above_c1
-                    and conf_bear and conf_below_rev):
-                sig, stype = -1, "2c-original-short"
+            for ema_p in (20, 50, 100, 200):
+                ema_val = c2[f"ema{ema_p}"]
+                lbl     = f"ema{ema_p}"
 
-            elif (_bb(c2) < ema20 < _bt(c2)
-                  and c2["High"] > c1["High"]
-                  and conf_bear and conf_below_rev):
-                sig, stype = -1, "2c-body-pierce-short"
+                rev_body_below = _bt(c2) < ema_val
+                rev_wick_above = c2["High"] > ema_val
 
-            elif (c2["Low"] > c1["Low"] and c2["High"] > c1["High"]
-                  and rev_body_below and rev_wick_above
-                  and conf_bear and conf_below_rev):
-                sig, stype = -1, "2c-inside-short"
+                if (rev_body_below and rev_wick_above and rev_above_c1
+                        and conf_bear and conf_below_rev):
+                    sig, stype = -1, f"2c-original-short-{lbl}"; break
 
-            elif (_is_pinbar_short(c2, ema20, ratio)
-                  and conf_bear and c3["High"] < c2["High"] and c3["Close"] < c2["Low"]):
-                sig, stype = -1, "1c-pinbar-short"
+                if (_bb(c2) < ema_val < _bt(c2)
+                        and rev_above_c1 and conf_bear and conf_below_rev):
+                    sig, stype = -1, f"2c-body-pierce-short-{lbl}"; break
+
+                if (c2["Low"] > c1["Low"] and rev_above_c1
+                        and rev_body_below and rev_wick_above
+                        and conf_bear and conf_below_rev):
+                    sig, stype = -1, f"2c-inside-short-{lbl}"; break
+
+                if (_is_pinbar_short(c2, ema_val, ratio)
+                        and conf_bear and c3["High"] < c2["High"]
+                        and c3["Close"] < c2["Low"]):
+                    sig, stype = -1, f"1c-pinbar-short-{lbl}"; break
 
             if sig == -1:
                 entry = c3["Low"]
@@ -350,8 +360,11 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                         filter_stats["atr"] += 1; sig = 0
 
                     if sig == -1:
-                        ema100_touch  = c2["High"] >= ema100 * 0.99
-                        lower_high_ok = (c2["High"] < last_rev_high_short) or ema100_touch
+                        any_ema_touch = any(
+                            c2["High"] >= c2[f"ema{p}"] * 0.99
+                            for p in (20, 50, 100, 200)
+                        )
+                        lower_high_ok = (c2["High"] < last_rev_high_short) or any_ema_touch
                         if not lower_high_ok:
                             filter_stats["higher_low"] += 1; sig = 0
 
