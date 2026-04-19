@@ -10,3 +10,6 @@ kaleido==0.2.1
 
 # HTTP
 requests>=2.31.0
+
+# HTML parsing (Wikipedia ticker fetch için zorunlu)
+lxml>=5.1.0

@@ -166,7 +166,8 @@ def scan_market(
     tickers = _get_tickers(market_key)
     if not tickers:
         logger.warning('%s için ticker listesi alınamadı.', label)
-        return [], {'label': label, 'scanned': 0, 'signals': 0, 'index_direction': None}
+        return [], {'label': label, 'scanned': 0, 'signals': 0,
+                    'index_direction': None, 'index_symbol': index_sym, 'tv_exchange': tv_exch}
 
     print(f'  {len(tickers)} hisse taranıyor...')
 
