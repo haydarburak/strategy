@@ -216,7 +216,7 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                 continue
 
             # ── Filters 2 & 3: Pattern + Confirmation ───────
-            # EMA20 → EMA50 → EMA100 → EMA200 sırasıyla denenır,
+            # EMA20 → EMA50 → EMA100 → EMA200 sırasıyla denenir,
             # ilk eşleşen EMA ve formasyon kabul edilir.
             conf_bull      = _bull(c3)
             conf_above_rev = c3["Close"] > c2["High"]
@@ -261,13 +261,17 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                         filter_stats["atr"] += 1; sig = 0
 
                     # ── Filter 6: Higher lows ───────────────
-                    # Herhangi bir EMA'ya dokunuş → istisna geçerli
+                    # Reversal pattern tespit edildi → referansı hemen kaydet.
+                    # Böylece MACD/Stoch/ATR nedeniyle reddedilen reversallar da
+                    # bir sonraki higher-low karşılaştırmasına dahil edilir.
                     if sig == 1:
+                        prev_rev_low  = last_rev_low_long
+                        last_rev_low_long = c2["Low"]   # her pattern tespitinde güncelle
                         any_ema_touch = any(
                             c2["Low"] <= c2[f"ema{p}"] * 1.01
                             for p in (20, 50, 100, 200)
                         )
-                        higher_low_ok = (c2["Low"] > last_rev_low_long) or any_ema_touch
+                        higher_low_ok = (c2["Low"] > prev_rev_low) or any_ema_touch
                         if not higher_low_ok:
                             filter_stats["higher_low"] += 1; sig = 0
 
@@ -294,7 +298,6 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
                     if sig == 1:
                         filter_stats["passed"] += 1
-                        last_rev_low_long = c2["Low"]   # update for next higher-low check
 
         # ═══════════════════  SHORT  ══════════════════════
         elif c2["downtrend"]:
@@ -360,11 +363,13 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                         filter_stats["atr"] += 1; sig = 0
 
                     if sig == -1:
+                        prev_rev_high      = last_rev_high_short
+                        last_rev_high_short = c2["High"]   # her pattern tespitinde güncelle
                         any_ema_touch = any(
                             c2["High"] >= c2[f"ema{p}"] * 0.99
                             for p in (20, 50, 100, 200)
                         )
-                        lower_high_ok = (c2["High"] < last_rev_high_short) or any_ema_touch
+                        lower_high_ok = (c2["High"] < prev_rev_high) or any_ema_touch
                         if not lower_high_ok:
                             filter_stats["higher_low"] += 1; sig = 0
 
@@ -385,7 +390,6 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
                     if sig == -1:
                         filter_stats["passed"] += 1
-                        last_rev_high_short = c2["High"]
 
         signals.append(sig)
         entries.append(entry if sig != 0 else None)
