@@ -131,6 +131,44 @@ def _bull(c): return c["Close"] > c["Open"]
 def _bear(c): return c["Close"] < c["Open"]
 
 
+def _counter_trend_level(df, c2_iloc, c3_iloc, ct_bars, side="long"):
+    """
+    Pullback içindeki 2 en son pivot high (long) veya pivot low (short)
+    noktasından doğrusal trendline çizer ve c3 konumundaki değeri döner.
+    """
+    start = max(0, c2_iloc - ct_bars)
+    end   = c2_iloc + 1
+    col   = "High" if side == "long" else "Low"
+    vals  = df[col].iloc[start:end].values
+    n     = len(vals)
+
+    pivots = []
+    for j in range(1, n - 1):
+        if side == "long":
+            if vals[j] >= vals[j - 1] and vals[j] >= vals[j + 1]:
+                pivots.append((start + j, float(vals[j])))
+        else:
+            if vals[j] <= vals[j - 1] and vals[j] <= vals[j + 1]:
+                pivots.append((start + j, float(vals[j])))
+
+    if len(pivots) >= 2:
+        p1, p2 = pivots[-2], pivots[-1]
+    else:
+        order = sorted(range(n), key=lambda j: -vals[j] if side == "long" else vals[j])
+        if len(order) >= 2:
+            a, b = sorted([start + order[0], start + order[1]])
+            p1 = (a, float(df[col].iloc[a]))
+            p2 = (b, float(df[col].iloc[b]))
+        else:
+            return float(df[col].iloc[c2_iloc])
+
+    if p1[0] == p2[0]:
+        return p2[1]
+
+    slope = (p2[1] - p1[1]) / (p2[0] - p1[0])
+    return p2[1] + slope * (c3_iloc - p2[0])
+
+
 def _is_pinbar_long(c, ema, ratio):
     if _rg(c) == 0:
         return False
@@ -248,7 +286,7 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                     sig, stype = 1, f"1c-pinbar-long-{lbl}"; break
 
             if sig == 1:
-                entry = c3["High"]    # stop buy at confirmation high
+                entry = c3["High"]
                 stop  = c2["Low"]
                 risk  = entry - stop
                 if risk <= 0:
@@ -276,12 +314,11 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                             filter_stats["higher_low"] += 1; sig = 0
 
                     # ── Filter 7: Counter-trend break ───────
-                    # Confirmation bar must close above c1's high (the most
-                    # recent pullback resistance bar — the immediate counter-trend).
-                    # This is the trendline drawn through the last 2 pullback pivot
-                    # highs; breaking c1's high breaks that trendline.
+                    # Pullback'teki 2 pivot high'tan çizilen trendline hesaplanır;
+                    # teyit mumu bu çizginin üzerinde kapanmalı.
                     if sig == 1:
-                        if not (c3["Close"] > c1["High"]):
+                        tl_val = _counter_trend_level(df, i - 2, i - 1, ct_bars, "long")
+                        if not (c3["Close"] > tl_val):
                             filter_stats["counter_trend"] += 1; sig = 0
 
                     # ── Filter: Resistance zone ─────────────
@@ -374,9 +411,10 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                             filter_stats["higher_low"] += 1; sig = 0
 
                     if sig == -1:
-                        # Short: confirmation must close below c1's low
-                        # (breaks the immediate rally support = counter-trend break)
-                        if not (c3["Close"] < c1["Low"]):
+                        # Pullback'teki 2 pivot low'dan çizilen trendline hesaplanır;
+                        # teyit mumu bu çizginin altında kapanmalı.
+                        tl_val = _counter_trend_level(df, i - 2, i - 1, ct_bars, "short")
+                        if not (c3["Close"] < tl_val):
                             filter_stats["counter_trend"] += 1; sig = 0
 
                     if sig == -1:
@@ -436,8 +474,13 @@ def run_backtest(df: pd.DataFrame, cfg: dict) -> tuple:
 
             if d == "long":
                 if trade.get("pending"):
+                    trade["pending_bars"] = trade.get("pending_bars", 0) + 1
                     if row["High"] >= trade["entry_price"]:
                         trade["pending"] = False
+                    elif trade["pending_bars"] >= 3:
+                        trade.update(exit_price=trade["entry_price"], exit_date=idx,
+                                     pnl_dollar=0, result="EXPIRED", exit_capital=capital)
+                        trades.append(trade); in_trade = False
                 else:
                     if row["Low"] <= trade["sl"]:
                         capital += -rsk
@@ -451,8 +494,13 @@ def run_backtest(df: pd.DataFrame, cfg: dict) -> tuple:
                         trades.append(trade); in_trade = False
             else:
                 if trade.get("pending"):
+                    trade["pending_bars"] = trade.get("pending_bars", 0) + 1
                     if row["Low"] <= trade["entry_price"]:
                         trade["pending"] = False
+                    elif trade["pending_bars"] >= 3:
+                        trade.update(exit_price=trade["entry_price"], exit_date=idx,
+                                     pnl_dollar=0, result="EXPIRED", exit_capital=capital)
+                        trades.append(trade); in_trade = False
                 else:
                     if row["High"] >= trade["sl"]:
                         capital += -rsk
