@@ -2,11 +2,10 @@ name: Sapan Strateji — Günlük Sinyal Taraması
 
 on:
   schedule:
-    # ABD piyasası 16:00 ET kapanır.
-    # EDT (yaz, UTC-4): 16:00 EDT = 20:00 UTC → 1 saat sonra = 21:00 UTC
-    # EST (kış, UTC-5): 16:00 EST = 21:00 UTC → 1 saat sonra = 22:00 UTC
-    # 22:00 UTC yıl boyunca garantili ≥1 saat sonrasında çalışır.
-    - cron: "0 22 * * 1-5"   # Pazartesi–Cuma 22:00 UTC
+    # Almanya 23:45 — yaz saati (CEST, UTC+2): Nisan–Ekim → 21:45 UTC
+    - cron: "45 21 * 4,5,6,7,8,9,10 1-5"
+    # Almanya 23:45 — kış saati (CET, UTC+1): Kasım–Mart → 22:45 UTC
+    - cron: "45 22 * 1,2,3,11,12 1-5"
 
   workflow_dispatch:           # GitHub Actions sekmesinden manuel tetikleme
     inputs:

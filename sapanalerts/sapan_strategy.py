@@ -435,11 +435,13 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         targets.append(tp   if sig != 0 else None)
         stypes.append(stype if sig != 0 else None)
 
-    df["signal"]      = [0]    * pad + signals
-    df["entry_price"] = [None] * pad + entries
-    df["stop_loss"]   = [None] * pad + stops
-    df["take_profit"] = [None] * pad + targets
-    df["signal_type"] = [None] * pad + stypes
+    # Sinyali c3'ün barına (i-1) kaydet — pattern c3 kapandığında tamamlanır.
+    # Scanner o akşam sinyali bulur ve alarmı gönderir; stop-order ertesi gün girer.
+    df["signal"]      = [0]    * (pad - 1) + signals + [0]
+    df["entry_price"] = [None] * (pad - 1) + entries + [None]
+    df["stop_loss"]   = [None] * (pad - 1) + stops   + [None]
+    df["take_profit"] = [None] * (pad - 1) + targets + [None]
+    df["signal_type"] = [None] * (pad - 1) + stypes  + [None]
 
     print(f"\n  Filtre istatistikleri:")
     if filter_stats["index_trend"] > 0:
