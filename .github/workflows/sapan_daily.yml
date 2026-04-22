@@ -2,10 +2,10 @@ name: Sapan Strateji — Günlük Sinyal Taraması
 
 on:
   schedule:
-    # Almanya 23:45 — yaz saati (CEST, UTC+2): Nisan–Ekim → 21:45 UTC
-    - cron: "42 21 * 4,5,6,7,8,9,10 1-5"
-    # Almanya 23:45 — kış saati (CET, UTC+1): Kasım–Mart → 22:45 UTC
-    - cron: "42 22 * 1,2,3,11,12 1-5"
+    # Almanya 23:30 — yaz saati (CEST, UTC+2): Nisan–Ekim → 21:45 UTC
+    - cron: "30 21 * 4,5,6,7,8,9,10 1-5"
+    # Almanya 23:30 — kış saati (CET, UTC+1): Kasım–Mart → 22:45 UTC
+    - cron: "30 22 * 1,2,3,11,12 1-5"
 
   workflow_dispatch:           # GitHub Actions sekmesinden manuel tetikleme
     inputs:
