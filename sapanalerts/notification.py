@@ -3,7 +3,8 @@ Telegram notification — Sapan Strateji alert modülü.
 
 Ortam değişkenleri (mevcut strategy repo ile aynı):
   TELEGRAM_BOT_TOKEN   — BotFather'dan alınan token
-  TELEGRAM_BOT_CHAT_ID — hedef chat/channel/group ID
+  TELEGRAM_BOT_CHAT_ID — hedef chat/channel/group ID.
+                         Birden fazla alıcı için virgülle ayır: "12345,67890".
 """
 
 import logging
@@ -17,45 +18,51 @@ logger = logging.getLogger(__name__)
 _warned_missing = False
 
 
-def _credentials() -> tuple[str, str] | tuple[None, None]:
+def _credentials() -> tuple[str, list[str]] | tuple[None, None]:
     global _warned_missing
-    token   = os.getenv('TELEGRAM_BOT_TOKEN')
-    chat_id = os.getenv('TELEGRAM_BOT_CHAT_ID')
-    if not token or not chat_id:
+    token    = os.getenv('TELEGRAM_BOT_TOKEN')
+    raw_ids  = os.getenv('TELEGRAM_BOT_CHAT_ID', '')
+    chat_ids = [c.strip() for c in raw_ids.split(',') if c.strip()]
+    if not token or not chat_ids:
         if not _warned_missing:
             logger.warning('TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_CHAT_ID not set — bildirimler devre dışı.')
             _warned_missing = True
         return None, None
-    return token, chat_id
+    return token, chat_ids
 
 
-def _post_message(token: str, chat_id: str, text: str) -> bool:
-    try:
-        r = requests.post(
-            f'https://api.telegram.org/bot{token}/sendMessage',
-            json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
-            timeout=15,
-        )
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        logger.error(f'Telegram sendMessage hatası: {e}')
-        return False
+def _post_message(token: str, chat_ids: list[str], text: str) -> bool:
+    ok = True
+    for chat_id in chat_ids:
+        try:
+            r = requests.post(
+                f'https://api.telegram.org/bot{token}/sendMessage',
+                json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                timeout=15,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.error(f'Telegram sendMessage hatası ({chat_id}): {e}')
+            ok = False
+    return ok
 
 
-def _post_photo(token: str, chat_id: str, caption: str, png: BytesIO) -> bool:
-    try:
-        r = requests.post(
-            f'https://api.telegram.org/bot{token}/sendPhoto',
-            data={'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'},
-            files={'photo': ('chart.png', png, 'image/png')},
-            timeout=30,
-        )
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        logger.error(f'Telegram sendPhoto hatası: {e}')
-        return False
+def _post_photo(token: str, chat_ids: list[str], caption: str, png: BytesIO) -> bool:
+    ok = True
+    for chat_id in chat_ids:
+        try:
+            png.seek(0)   # her alıcı için akışı başa sar
+            r = requests.post(
+                f'https://api.telegram.org/bot{token}/sendPhoto',
+                data={'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'},
+                files={'photo': ('chart.png', png, 'image/png')},
+                timeout=30,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.error(f'Telegram sendPhoto hatası ({chat_id}): {e}')
+            ok = False
+    return ok
 
 
 # ── public API ──────────────────────────────────────────────────────────────
@@ -77,7 +84,7 @@ def send_sapan_signal(
     Sapan stratejisi sinyalini Telegram'a gönderir.
     chart_png verilirse foto olarak, verilmezse metin olarak gönderir.
     """
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -112,8 +119,8 @@ def send_sapan_signal(
     )
 
     if chart_png is not None:
-        return _post_photo(token, chat_id, text, chart_png)
-    return _post_message(token, chat_id, text)
+        return _post_photo(token, chat_ids, text, chart_png)
+    return _post_message(token, chat_ids, text)
 
 
 def send_index_status(
@@ -124,7 +131,7 @@ def send_index_status(
     """Piyasa taraması öncesi endeks trend durumunu bildirir."""
     if direction is None:
         return False
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -135,7 +142,7 @@ def send_index_status(
         f'<code>{index_symbol}</code> → {bias}\n'
         f'<a href="{tv_link}">Grafiği görüntüle</a>'
     )
-    return _post_message(token, chat_id, text)
+    return _post_message(token, chat_ids, text)
 
 
 def send_scan_summary(
@@ -147,7 +154,7 @@ def send_scan_summary(
     Tüm piyasaların tarama özet mesajını gönderir.
     market_results: [{'label': 'BIST100', 'signals': 2, 'scanned': 88}, ...]
     """
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -156,12 +163,12 @@ def send_scan_summary(
         lines.append(f"  • {m['label']}: {m['signals']} sinyal / {m['scanned']} hisse")
     lines.append(f'\n📊 Toplam sinyal: <b>{total_signals}</b>')
 
-    return _post_message(token, chat_id, '\n'.join(lines))
+    return _post_message(token, chat_ids, '\n'.join(lines))
 
 
 def send_no_signal_message(date_str: str, markets: list[str]) -> bool:
     """Hiç sinyal bulunamadığında bilgi mesajı gönderir."""
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -170,4 +177,4 @@ def send_no_signal_message(date_str: str, markets: list[str]) -> bool:
         f'Bugün <b>yeni sinyal bulunamadı</b>.\n'
         f'Taranan piyasalar: {", ".join(markets)}'
     )
-    return _post_message(token, chat_id, text)
+    return _post_message(token, chat_ids, text)
