@@ -10,9 +10,9 @@ on:
   workflow_dispatch:           # GitHub Actions sekmesinden manuel tetikleme
     inputs:
       lookback_days:
-        description: "Sinyal arama penceresi (gün) — default: 3"
+        description: "Son kaç kapanmış seans taranır — default: 1"
         required: false
-        default: "3"
+        default: "1"
       markets:
         description: "Taranacak piyasalar: nasdaq,nyse,bist,xetr"
         required: false
@@ -51,7 +51,7 @@ jobs:
         run: |
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}"     >> $GITHUB_ENV
           echo "TELEGRAM_BOT_CHAT_ID=${{ secrets.TELEGRAM_BOT_CHAT_ID }}" >> $GITHUB_ENV
-          echo "LOOKBACK_DAYS=${{ github.event.inputs.lookback_days || '3' }}"    >> $GITHUB_ENV
+          echo "LOOKBACK_DAYS=${{ github.event.inputs.lookback_days || '1' }}"    >> $GITHUB_ENV
           echo "MARKETS=${{ github.event.inputs.markets || 'nasdaq,nyse,bist,xetr' }}" >> $GITHUB_ENV
 
       # ── 6. Tarama ────────────────────────────────────────────────────────────

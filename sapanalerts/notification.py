@@ -78,6 +78,7 @@ def send_sapan_signal(
     tp: float,
     index_symbol: str,
     index_trend: Optional[bool],
+    status: Optional[str] = None,
     chart_png: Optional[BytesIO] = None,
 ) -> bool:
     """
@@ -106,7 +107,8 @@ def send_sapan_signal(
         f'🔔 <b>SAPAN STRATEJİSİ — {arrow}</b>\n'
         f'Symbol  : <code>{exchange}:{symbol}</code>\n'
         f'Tip     : <code>{sig_type}</code>\n'
-        f'Tarih   : <code>{sig_date}</code>\n'
+        f'Tarih   : <code>{sig_date}</code>  (teyit mumu)\n'
+        + (f'Durum   : <code>{status}</code>\n' if status else '') +
         f'─────────────────────\n'
         f'💰 Entry    : <code>{entry:.4g}</code>  (stop-order)\n'
         f'🛑 Stop Loss: <code>{sl:.4g}</code>\n'
@@ -166,15 +168,18 @@ def send_scan_summary(
     return _post_message(token, chat_ids, '\n'.join(lines))
 
 
-def send_no_signal_message(date_str: str, markets: list[str]) -> bool:
-    """Hiç sinyal bulunamadığında bilgi mesajı gönderir."""
+def send_no_signal_message(date_str: str, market_results: list[dict]) -> bool:
+    """
+    Hiç sinyal bulunamadığında bilgi mesajı gönderir.
+    Taranan hisse sayıları da yazılır; 0 görünen piyasa veri sorununa işaret eder.
+    """
     token, chat_ids = _credentials()
     if token is None:
         return False
 
-    text = (
-        f'📊 <b>Sapan Strateji</b> — {date_str}\n\n'
-        f'Bugün <b>yeni sinyal bulunamadı</b>.\n'
-        f'Taranan piyasalar: {", ".join(markets)}'
-    )
-    return _post_message(token, chat_ids, text)
+    lines = [f'📊 <b>Sapan Strateji</b> — {date_str}\n',
+             'Son seansta <b>yeni sinyal bulunamadı</b>.']
+    for m in market_results:
+        warn = '  ⚠️' if m['scanned'] == 0 else ''
+        lines.append(f"  • {m['label']}: {m['scanned']} hisse tarandı{warn}")
+    return _post_message(token, chat_ids, '\n'.join(lines))

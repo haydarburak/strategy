@@ -6,7 +6,7 @@ GitHub Actions (sapan_daily.yml) veya elle çalıştırılır.
 Ortam değişkenleri:
   TELEGRAM_BOT_TOKEN   — BotFather token
   TELEGRAM_BOT_CHAT_ID — hedef chat ID
-  LOOKBACK_DAYS        — kaç gün geriye (default: 3)
+  LOOKBACK_DAYS        — son kaç kapanmış seans taranır (default: 1)
   MARKETS              — taranacak piyasalar, virgülle ayrılmış
                          (default: nasdaq,nyse,bist,xetr)
 """
@@ -28,7 +28,7 @@ from .scanner import scan_market, MARKET_DEFS
 
 
 def main() -> int:
-    lookback = int(os.environ.get('LOOKBACK_DAYS', '3'))
+    lookback = int(os.environ.get('LOOKBACK_DAYS', '1'))
     markets  = [m.strip().lower()
                 for m in os.environ.get('MARKETS', 'nasdaq,nyse,bist,xetr').split(',')]
 
@@ -38,7 +38,7 @@ def main() -> int:
     print(f'  SAPAN STRATEJİSİ — CANLI TARAMA')
     print(f'  Tarih    : {today_str}')
     print(f'  Piyasalar: {", ".join(markets)}')
-    print(f'  Lookback : {lookback} gün')
+    print(f'  Lookback : son {lookback} seans')
     print(f'{"="*60}')
 
     unknown = [m for m in markets if m not in MARKET_DEFS]
@@ -89,6 +89,7 @@ def main() -> int:
                 tp=alert['tp'],
                 index_symbol=alert['index'],
                 index_trend=alert['idx_uptrend'],
+                status=alert['status'],
                 chart_png=png,
             )
             print(f'  📤 {alert["symbol"]} ({alert["direction"]}) gönderildi.')
@@ -100,7 +101,7 @@ def main() -> int:
     if not all_alerts:
         notification.send_no_signal_message(
             date_str=today_str,
-            markets=[MARKET_DEFS[m][2] for m in markets],
+            market_results=market_results,
         )
         print('\n  Sinyal bulunamadı — bilgi mesajı gönderildi.')
     else:

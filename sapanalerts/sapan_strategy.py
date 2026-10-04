@@ -153,9 +153,13 @@ def _is_pinbar_short(c, ema, ratio):
 def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """
     Bar layout at detection point i:
-      c2 = df[i-2]  reversal candle
-      c3 = df[i-1]  confirmation candle  ← signal stamped here
-      entry triggered next bar (i) if stop order is hit
+      c1 = df[i-2]  prior bar
+      c2 = df[i-1]  reversal candle
+      c3 = df[i]    confirmation candle  ← signal stamped here
+      entry triggered on a following bar (i+1, ...) if stop order is hit
+
+    The last row of df is evaluated as a confirmation candle, so df must
+    contain only closed bars.
     """
     ratio        = cfg["pinbar_wick_ratio"]
     stoch_os     = cfg["stoch_os"]
@@ -178,13 +182,13 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                     "higher_low": 0, "counter_trend": 0, "resistance": 0,
                     "index_trend": 0, "passed": 0}
 
-    min_idx = 205
+    min_idx = 204
     pad     = min_idx
 
     for i in range(min_idx, len(df)):
-        c3 = df.iloc[i - 1]   # confirmation
-        c2 = df.iloc[i - 2]   # reversal
-        c1 = df.iloc[i - 3]   # prior bar
+        c3 = df.iloc[i]       # confirmation
+        c2 = df.iloc[i - 1]   # reversal
+        c1 = df.iloc[i - 2]   # prior bar
 
         atr    = c3["atr"]
 
@@ -283,8 +287,8 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                     # ── Filter: Resistance zone ─────────────
                     # No significant swing high between entry and TP
                     if sig == 1:
-                        res_start = max(0, i - res_lb - 5)
-                        res_end   = max(0, i - 5)
+                        res_start = max(0, i - res_lb - 4)
+                        res_end   = max(0, i - 4)
                         if res_start < res_end:
                             zone_highs = df["High"].iloc[res_start:res_end]
                             obstacle   = zone_highs.max()
@@ -375,8 +379,8 @@ def detect_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                             filter_stats["counter_trend"] += 1; sig = 0
 
                     if sig == -1:
-                        res_start = max(0, i - res_lb - 5)
-                        res_end   = max(0, i - 5)
+                        res_start = max(0, i - res_lb - 4)
+                        res_end   = max(0, i - 4)
                         if res_start < res_end:
                             zone_lows = df["Low"].iloc[res_start:res_end]
                             support   = zone_lows.min()
@@ -1111,8 +1115,44 @@ def fetch_sp500_tickers():
         return []
 
 
+# Son kaynak: diğer kaynaklar erişilemezse kullanılır (Nasdaq API, Ekim 2026).
+NASDAQ100_FALLBACK = [
+    "AAPL", "ABNB", "ADBE", "ADI", "ADP", "ADSK", "AEP", "ALAB", "ALNY", "AMAT",
+    "AMD", "AMGN", "AMZN", "APP", "ARM", "ASML", "AVGO", "AXON", "BKNG", "BKR",
+    "CCEP", "CDNS", "CEG", "CMCSA", "COST", "CPRT", "CRWD", "CRWV", "CSCO", "CSX",
+    "CTAS", "DASH", "DDOG", "DXCM", "EXC", "FANG", "FAST", "FER", "FTNT", "GEHC",
+    "GILD", "GOOG", "GOOGL", "HON", "HONA", "IDXX", "INTC", "INTU", "ISRG", "KDP",
+    "KLAC", "LIN", "LITE", "LRCX", "MAR", "MCHP", "MDLZ", "MELI", "META", "MNST",
+    "MPWR", "MRVL", "MSFT", "MSTR", "MU", "NBIS", "NFLX", "NVDA", "NXPI", "ODFL",
+    "ORLY", "PANW", "PAYX", "PCAR", "PDD", "PEP", "PLTR", "PYPL", "QCOM", "REGN",
+    "RKLB", "ROP", "ROST", "SBUX", "SHOP", "SNDK", "SNPS", "SPCX", "STX", "TER",
+    "TMUS", "TRI", "TSLA", "TTWO", "TXN", "VRTX", "WBD", "WDAY", "WDC", "WMT",
+    "XEL",
+]
+
+
 def fetch_nasdaq100_tickers():
-    """Fetch current NASDAQ 100 component tickers from Wikipedia."""
+    """
+    Fetch current NASDAQ 100 component tickers.
+    Wikipedia's Nasdaq-100 page no longer has a components table, so the
+    Nasdaq API is tried first, then Wikipedia, then NASDAQ100_FALLBACK.
+    """
+    import json, urllib.request
+    try:
+        req = urllib.request.Request(
+            "https://api.nasdaq.com/api/quote/list-type/nasdaq100",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                     "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            rows = json.load(resp)["data"]["data"]["rows"]
+        tickers = [r["symbol"].strip().replace(".", "-") for r in rows if r.get("symbol")]
+        if len(tickers) > 50:
+            print(f"  NASDAQ 100: {len(tickers)} hisse Nasdaq API'den alındı.")
+            return tickers
+        raise ValueError(f"yalnızca {len(tickers)} sembol döndü")
+    except Exception as e:
+        print(f"  [UYARI] NASDAQ 100 listesi Nasdaq API'den alınamadı: {e}")
+
     try:
         tables = _wiki_tables("https://en.wikipedia.org/wiki/Nasdaq-100")
         for t in tables:
@@ -1125,8 +1165,10 @@ def fetch_nasdaq100_tickers():
                         return tickers
         raise ValueError("Uygun sütun bulunamadı")
     except Exception as e:
-        print(f"  [UYARI] NASDAQ 100 listesi alınamadı: {e}")
-        return []
+        print(f"  [UYARI] NASDAQ 100 listesi Wikipedia'dan alınamadı: {e}")
+
+    print(f"  NASDAQ 100: {len(NASDAQ100_FALLBACK)} hisse yedek listeden alındı.")
+    return list(NASDAQ100_FALLBACK)
 
 
 def fetch_dax_tickers():

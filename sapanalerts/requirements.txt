@@ -5,7 +5,8 @@ numpy>=1.24.0
 
 # Grafik
 matplotlib>=3.7.0
-plotly>=5.17.0
+# plotly 6 PNG export için kaleido>=1 (+ Chrome) ister; kaleido 0.2.1 ile plotly 5'te kal
+plotly>=5.17.0,<6
 kaleido==0.2.1
 
 # HTTP

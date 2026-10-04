@@ -16,6 +16,7 @@ import datetime
 import io
 import logging
 import traceback
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -72,6 +73,49 @@ MARKET_DEFS = {
     'xetr':   (fetch_dax_tickers,       '^GDAXI',   'DAX40',      'XETR'),
 }
 
+# Piyasa kapanışı (yerel saat) — kapanmamış günlük bar teyit mumu sayılmasın diye
+MARKET_CLOSE = {
+    'nasdaq': ('America/New_York', datetime.time(16, 0)),
+    'nyse':   ('America/New_York', datetime.time(16, 0)),
+    'bist':   ('Europe/Istanbul',  datetime.time(18, 10)),
+    'xetr':   ('Europe/Berlin',    datetime.time(17, 35)),
+}
+_CLOSE_BUFFER = datetime.timedelta(minutes=20)
+
+
+def _drop_unclosed_bar(df: pd.DataFrame, market_key: str) -> pd.DataFrame:
+    """Seans henüz kapanmadıysa bugünün (eksik) barını çıkarır."""
+    if df is None or df.empty:
+        return df
+    tz_name, close_t = MARKET_CLOSE[market_key]
+    now_local = datetime.datetime.now(ZoneInfo(tz_name))
+    close_dt  = datetime.datetime.combine(now_local.date(), close_t,
+                                          tzinfo=now_local.tzinfo)
+    if df.index[-1].date() >= now_local.date() and now_local < close_dt + _CLOSE_BUFFER:
+        return df.iloc[:-1]
+    return df
+
+
+def _signal_status(df: pd.DataFrame, pos: int, direction: str,
+                   entry: float, sl: float, tp: float) -> str:
+    """Sinyal barından sonraki barlara bakarak stop emrinin durumunu döner."""
+    is_long   = direction == 'LONG'
+    triggered = False
+    for _, bar in df.iloc[pos + 1:].iterrows():
+        if not triggered:
+            if (bar['High'] >= entry) if is_long else (bar['Low'] <= entry):
+                triggered = True
+            elif (bar['Low'] <= sl) if is_long else (bar['High'] >= sl):
+                return 'GEÇERSİZ (tetiklenmeden SL seviyesine gitti)'
+            else:
+                continue
+        # Aynı barda SL ve TP birlikte görülürse muhafazakâr davranıp SL say
+        if (bar['Low'] <= sl) if is_long else (bar['High'] >= sl):
+            return 'STOP OLDU'
+        if (bar['High'] >= tp) if is_long else (bar['Low'] <= tp):
+            return 'HEDEF GELDİ'
+    return 'GİRİŞ TETİKLENDİ' if triggered else 'BEKLEMEDE'
+
 
 def _get_tickers(market_key: str) -> list[str]:
     """NASDAQ ve NYSE ayrıştırması ile ticker listesi döner."""
@@ -83,7 +127,8 @@ def _get_tickers(market_key: str) -> list[str]:
     return src() if callable(src) else list(src)
 
 
-def _load_index_trend(index_symbol: str, days_back: int = 600) -> pd.DataFrame | None:
+def _load_index_trend(index_symbol: str, market_key: str,
+                      days_back: int = 600) -> tuple[pd.DataFrame, bool | None] | None:
     """Endeks trend verisi indir (EMA stack → uptrend / downtrend flag)."""
     today = datetime.date.today()
     start = (today - datetime.timedelta(days=days_back)).strftime('%Y-%m-%d')
@@ -100,6 +145,10 @@ def _load_index_trend(index_symbol: str, days_back: int = 600) -> pd.DataFrame |
         idx.columns = idx.columns.get_level_values(0)
     idx = idx[['Open', 'High', 'Low', 'Close', 'Volume']].dropna(subset=['Close'])
     idx.index = pd.to_datetime(idx.index).tz_localize(None)
+    idx = _drop_unclosed_bar(idx, market_key)
+    if idx.empty:
+        logger.warning('Endeks verisi alınamadı: %s', index_symbol)
+        return None
 
     for p in (20, 50, 100, 200):
         idx[f'ema{p}'] = idx['Close'].ewm(span=p, adjust=False).mean()
@@ -148,7 +197,7 @@ def _download_stock(ticker: str, days_back: int = 500) -> pd.DataFrame | None:
 
 def scan_market(
     market_key: str,
-    lookback_days: int = 3,
+    lookback_days: int = 1,
 ) -> tuple[list[dict], dict]:
     """
     Bir piyasayı Sapan Stratejisi ile tarar.
@@ -172,30 +221,38 @@ def scan_market(
     print(f'  {len(tickers)} hisse taranıyor...')
 
     # Endeks trend yükle
-    idx_result = _load_index_trend(index_sym)
+    idx_result = _load_index_trend(index_sym, market_key)
     if idx_result is None:
         idx_trend, idx_direction = None, None
     else:
         idx_trend, idx_direction = idx_result
 
-    today = pd.Timestamp.now().normalize()
-    # Varsayılan davranış (lookback_days=3):
-    #   - Pazartesi: Cuma dahil (3 gün geriye) — hafta sonu boşluğunu kapatır
-    #   - Salı–Cuma: sadece BUGÜN — dünkü sinyaller zaten gönderildi
-    # Manuel override (lookback_days != 3): verilen gün sayısı kadar geriye git
-    if lookback_days == 3:
-        cutoff = today - pd.Timedelta(days=3) if today.weekday() == 0 else today
-    else:
-        cutoff = today - pd.Timedelta(days=lookback_days)
+    # Sinyal penceresi duvar saatinden değil, piyasanın son kapanmış
+    # seansından hesaplanır — cron gecikip gece yarısını (UTC) geçse de
+    # son seansın sinyalleri kaçmaz.
+    #   lookback_days=1 → yalnızca son kapanmış seans
+    #   lookback_days=N → son N seans
+    lookback_days = max(1, lookback_days)
+    session_cutoff = None
+    if idx_trend is not None:
+        sessions = idx_trend.index.unique()
+        session_cutoff = sessions[-min(lookback_days, len(sessions))]
+        logger.info('%s: son seans %s, sinyal penceresi %s itibarıyla',
+                    label, sessions[-1].date(), session_cutoff.date())
 
     alerts = []
     n_scanned = 0
 
     for i, ticker in enumerate(tickers, 1):
         try:
-            df = _download_stock(ticker)
+            df = _drop_unclosed_bar(_download_stock(ticker), market_key)
             if df is None or len(df) < 220:
                 continue
+
+            if session_cutoff is not None:
+                cutoff = session_cutoff
+            else:   # endeks yoksa hissenin kendi seanslarını kullan
+                cutoff = df.index[-min(lookback_days, len(df))]
 
             n_scanned += 1
             cfg = {**LIVE_CFG, 'symbol': ticker}
@@ -221,6 +278,11 @@ def scan_market(
                 if 'idx_uptrend' in df.columns:
                     idx_up = bool(df['idx_uptrend'].iloc[sig_pos])
 
+                entry  = float(sig_row['entry_price'])
+                sl     = float(sig_row['stop_loss'])
+                tp     = float(sig_row['take_profit'])
+                status = _signal_status(df, sig_pos, direction, entry, sl, tp)
+
                 alerts.append({
                     'symbol':       ticker,
                     'exchange':     tv_exch,
@@ -230,15 +292,16 @@ def scan_market(
                     'sig_pos':      sig_pos,
                     'direction':    direction,
                     'sig_type':     str(sig_row.get('signal_type', '')),
-                    'entry':        float(sig_row['entry_price']),
-                    'sl':           float(sig_row['stop_loss']),
-                    'tp':           float(sig_row['take_profit']),
+                    'entry':        entry,
+                    'sl':           sl,
+                    'tp':           tp,
+                    'status':       status,
                     'idx_uptrend':  idx_up,
                     'df':           df,
                 })
                 print(f'  ✅ [{i:>4}/{len(tickers)}] {ticker:<12} '
                       f'{direction:<5} {sig_row.get("signal_type","")} '
-                      f'{sig_date.strftime("%Y-%m-%d")}')
+                      f'{sig_date.strftime("%Y-%m-%d")}  {status}')
 
         except Exception as e:
             logger.debug('%s hatası: %s', ticker, e)
