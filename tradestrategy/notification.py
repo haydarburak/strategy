@@ -4,7 +4,8 @@ Telegram notification module.
 Required environment variables
 -------------------------------
   TELEGRAM_BOT_TOKEN   — bot API token from @BotFather
-  TELEGRAM_BOT_CHAT_ID — target chat / channel ID
+  TELEGRAM_BOT_CHAT_ID — target chat / channel ID.
+                         Comma-separate multiple recipients: "12345,67890".
 
 Both must be set for any message to be sent.  If either is missing, every
 call silently succeeds (returns False) and logs a warning once per process.
@@ -26,11 +27,12 @@ logger = logging.getLogger(__name__)
 _warned_missing = False
 
 
-def _credentials() -> tuple[str, str] | tuple[None, None]:
+def _credentials() -> tuple[str, list[str]] | tuple[None, None]:
     global _warned_missing
-    token   = os.getenv('TELEGRAM_BOT_TOKEN')
-    chat_id = os.getenv('TELEGRAM_BOT_CHAT_ID')
-    if not token or not chat_id:
+    token    = os.getenv('TELEGRAM_BOT_TOKEN')
+    raw_ids  = os.getenv('TELEGRAM_BOT_CHAT_ID', '')
+    chat_ids = [c.strip() for c in raw_ids.split(',') if c.strip()]
+    if not token or not chat_ids:
         if not _warned_missing:
             logger.warning(
                 'TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_CHAT_ID not set '
@@ -38,36 +40,41 @@ def _credentials() -> tuple[str, str] | tuple[None, None]:
             )
             _warned_missing = True
         return None, None
-    return token, chat_id
+    return token, chat_ids
 
 
-def _post_message(token: str, chat_id: str, text: str) -> bool:
-    try:
-        r = requests.post(
-            f'https://api.telegram.org/bot{token}/sendMessage',
-            json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
-            timeout=15,
-        )
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        logger.error(f'Telegram sendMessage failed: {e}')
-        return False
+def _post_message(token: str, chat_ids: list[str], text: str) -> bool:
+    ok = True
+    for chat_id in chat_ids:
+        try:
+            r = requests.post(
+                f'https://api.telegram.org/bot{token}/sendMessage',
+                json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                timeout=15,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.error(f'Telegram sendMessage failed ({chat_id}): {e}')
+            ok = False
+    return ok
 
 
-def _post_photo(token: str, chat_id: str, caption: str, png: BytesIO) -> bool:
-    try:
-        r = requests.post(
-            f'https://api.telegram.org/bot{token}/sendPhoto',
-            data={'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'},
-            files={'photo': ('chart.png', png, 'image/png')},
-            timeout=30,
-        )
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        logger.error(f'Telegram sendPhoto failed: {e}')
-        return False
+def _post_photo(token: str, chat_ids: list[str], caption: str, png: BytesIO) -> bool:
+    ok = True
+    for chat_id in chat_ids:
+        try:
+            png.seek(0)   # rewind the buffer for each recipient
+            r = requests.post(
+                f'https://api.telegram.org/bot{token}/sendPhoto',
+                data={'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'},
+                files={'photo': ('chart.png', png, 'image/png')},
+                timeout=30,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.error(f'Telegram sendPhoto failed ({chat_id}): {e}')
+            ok = False
+    return ok
 
 
 # ── public API ─────────────────────────────────────────────────────────────────
@@ -99,7 +106,7 @@ def send_signal(
     -------
     True on HTTP 200, False otherwise.
     """
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -120,8 +127,8 @@ def send_signal(
     )
 
     if chart_png is not None:
-        return _post_photo(token, chat_id, text, chart_png)
-    return _post_message(token, chat_id, text)
+        return _post_photo(token, chat_ids, text, chart_png)
+    return _post_message(token, chat_ids, text)
 
 
 def send_divergence_alert(
@@ -146,7 +153,7 @@ def send_divergence_alert(
     -------
     True on HTTP 200, False otherwise.
     """
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -175,8 +182,8 @@ def send_divergence_alert(
     )
 
     if chart_png is not None:
-        return _post_photo(token, chat_id, text, chart_png)
-    return _post_message(token, chat_id, text)
+        return _post_photo(token, chat_ids, text, chart_png)
+    return _post_message(token, chat_ids, text)
 
 
 def send_divergence_batch(alerts: list[dict]) -> bool:
@@ -191,7 +198,7 @@ def send_divergence_batch(alerts: list[dict]) -> bool:
     if not alerts:
         return False
 
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -207,7 +214,7 @@ def send_divergence_batch(alerts: list[dict]) -> bool:
             f'  <a href="{tv_link}">chart</a>'
         )
 
-    return _post_message(token, chat_id, '\n'.join(lines))
+    return _post_message(token, chat_ids, '\n'.join(lines))
 
 
 def send_index_status(
@@ -223,7 +230,7 @@ def send_index_status(
     if direction is None:
         return False          # neutral → no notification
 
-    token, chat_id = _credentials()
+    token, chat_ids = _credentials()
     if token is None:
         return False
 
@@ -236,4 +243,4 @@ def send_index_status(
         f'<code>{index_exchange}:{index_symbol}</code> → {bias}\n'
         f'<a href="{tv_link}">View chart</a>'
     )
-    return _post_message(token, chat_id, text)
+    return _post_message(token, chat_ids, text)

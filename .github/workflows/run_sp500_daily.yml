@@ -1,8 +1,12 @@
 name: Run S&P 500 Strategy Daily
 
 on:
-  #schedule:
-  #  - cron: "0 21 * * 1-5"  # 9 PM UTC = 11 PM German time, Monday–Friday (after US market close)
+  schedule:
+    # 23:30 German time, Monday–Friday — all four markets (incl. US) are closed.
+    # Summer time (CEST, UTC+2), April–October → 21:30 UTC
+    - cron: "30 21 * 4,5,6,7,8,9,10 1-5"
+    # Winter time (CET, UTC+1), November–March → 22:30 UTC
+    - cron: "30 22 * 1,2,3,11,12 1-5"
   workflow_dispatch:          # Allow manual trigger from GitHub Actions tab
 
 jobs:
@@ -50,7 +54,7 @@ jobs:
 
       # ── 6. remaining dependencies ─────────────────────────────────────────────
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r tradestrategy/requirements.txt
 
       - name: Verify Key Packages
         run: |

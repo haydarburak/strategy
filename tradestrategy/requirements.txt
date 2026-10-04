@@ -15,8 +15,9 @@ pandas>=2.0.0,<3.0.0
 pandas_ta==0.4.71b0
 numba>=0.59.0
 
-# Visualization — kaleido 0.2.1 required for plotly static image export
-plotly>=5.17.0
+# Visualization — kaleido 0.2.1 required for plotly static image export.
+# plotly 6 needs kaleido>=1 (+ Chrome), so stay on plotly 5.
+plotly>=5.17.0,<6
 kaleido==0.2.1
 
 # Trading data
