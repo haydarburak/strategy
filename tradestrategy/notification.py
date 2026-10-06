@@ -189,7 +189,8 @@ def send_divergence_alert(
     return _post_message(token, chat_ids, text)
 
 
-def send_divergence_batch(alerts: list[dict]) -> bool:
+def send_divergence_batch(alerts: list[dict],
+                          title: str = 'RSI Divergence Scan — Summary') -> bool:
     """
     Send a summary message listing all divergences found in the current scan.
 
@@ -208,7 +209,7 @@ def send_divergence_batch(alerts: list[dict]) -> bool:
     if token is None:
         return False
 
-    header  = '📋 <b>RSI Divergence Scan — Summary</b>\n'
+    header  = f'📋 <b>{title}</b>\n'
     entries = []
     for a in alerts:
         tv_link = (

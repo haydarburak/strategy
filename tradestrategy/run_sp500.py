@@ -58,6 +58,12 @@ MARKET_INDICES = {
 
 _EMA_COLS = ['EMA20', 'EMA50', 'EMA100', 'EMA200']
 
+# Exchanges whose (S&P 500) stocks are also scanned for divergences, and the
+# divergence types reported for them. Hidden divergences fire ~10x more often,
+# so they are kept for HOLDING_STOCKS only.
+SP500_EXCHANGES = ('NYSE', 'NASDAQ')
+SP500_DIV_TYPES = ('bearish', 'bullish')
+
 # Portfolio watchlist for divergence scan — same as main.py HOLDING_STOCKS.
 # Exchange prefix is required so tvDatafeed fetches from the correct source.
 HOLDING_STOCKS = [
@@ -225,6 +231,59 @@ def _indicator_data(df: pd.DataFrame, sig: Signal) -> dict:
     }
 
 
+def _pivot_time(df: pd.DataFrame, sig) -> tuple[Optional[pd.Timestamp], Optional[str]]:
+    """Timestamp and YYYY-MM-DD date of the divergence's p2 pivot bar."""
+    pivot_ts = None
+    if 'datetime' in df.columns:
+        try:
+            pivot_ts = pd.Timestamp(df['datetime'].iloc[sig.bar_index])
+            if pivot_ts.tzinfo is None:
+                pivot_ts = pivot_ts.tz_localize('UTC')
+        except Exception:
+            pass
+    return pivot_ts, (pivot_ts.strftime('%Y-%m-%d') if pivot_ts is not None else None)
+
+
+def _save_divergence(db, df, exch, sym, sig, pivot_ts, pivot_date, today, source) -> dict:
+    """Persist a divergence to Firebase and return its CSV row."""
+    b = sig.bar_index
+    price_data = {
+        'open':   float(df['Open'].iloc[b]),
+        'high':   float(df['High'].iloc[b]),
+        'low':    float(df['Low'].iloc[b]),
+        'close':  float(df['Close'].iloc[b]),
+        'volume': float(df['Volume'].iloc[b]) if 'Volume' in df.columns else 0.0,
+        'rsi':    float(df['RSI14'].iloc[b]) if 'RSI14' in df.columns else 0.0,
+    }
+    doc_id = db.save_divergence_signal(
+        symbol          = sym,
+        exchange        = exch,
+        signal          = sig,
+        interval        = '1D',
+        price_data      = price_data,
+        pivot_timestamp = pivot_ts,
+    )
+    if doc_id:
+        print(f"  🔥 Divergence Firebase: {doc_id}")
+
+    return {
+        'date':       today,
+        'source':     source,          # 'holding' | 'sp500'
+        'exchange':   exch,
+        'symbol':     sym,
+        'div_type':   sig.div_type,
+        'label':      sig.label,
+        'bar_index':  b,
+        'pivot_date': pivot_date or '',
+        'price':      round(sig.price, 4),
+        'p1_rsi':     sig.meta.get('p1_rsi', ''),
+        'p2_rsi':     sig.meta.get('p2_rsi', ''),
+        'reason':     sig.reason,
+        'firebase_id': doc_id or '',
+        'tv_link':    f'https://www.tradingview.com/chart/?symbol={exch}:{sym}&interval=D',
+    }
+
+
 # ── main scan ──────────────────────────────────────────────────────────────────
 
 def run(n_bars: int, filter_exchange: Optional[str]) -> None:
@@ -250,6 +309,8 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
 
     all_signals: list[dict] = []
     errors:      list[str]  = []
+    sp500_divs:  list[tuple] = []   # (exchange, symbol, df, sig) — classic divergences only
+    holding_set = set(HOLDING_STOCKS)   # holdings get their own full divergence scan below
 
     # ── 2. per-exchange: check index, then scan stocks ─────────────────────────
     for exchange, symbols in symbols_by_exchange.items():
@@ -267,13 +328,23 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
         db.save_index_status(idx_sym, idx_exch, index_direction, '1D')
         notification.send_index_status(idx_sym, idx_exch, index_direction)
 
-        if index_direction is None:
-            print(f"[{exchange}] Index is NEUTRAL — exchange skipped.")
-            errors.append(f"{exchange}  [index neutral — all {len(symbols)} symbols skipped]")
-            continue
+        # S&P 500 stocks are scanned for divergences regardless of the index
+        # bias; pattern signals still need a bullish/bearish index.
+        scan_patterns   = index_direction is not None
+        scan_divergence = exchange in SP500_EXCHANGES
 
-        allowed = Direction.LONG if index_direction else Direction.SHORT
-        print(f"[{exchange}] Index bias: {allowed.value} — scanning {len(symbols)} symbols …")
+        if not scan_patterns:
+            if not scan_divergence:
+                print(f"[{exchange}] Index is NEUTRAL — exchange skipped.")
+                errors.append(f"{exchange}  [index neutral — all {len(symbols)} symbols skipped]")
+                continue
+            print(f"[{exchange}] Index is NEUTRAL — pattern signals skipped, "
+                  f"scanning {len(symbols)} symbols for divergences only …")
+            errors.append(f"{exchange}  [index neutral — pattern signals skipped]")
+            allowed = None
+        else:
+            allowed = Direction.LONG if index_direction else Direction.SHORT
+            print(f"[{exchange}] Index bias: {allowed.value} — scanning {len(symbols)} symbols …")
 
         # ── symbol scan ───────────────────────────────────────────────────────
         for symbol in tqdm(symbols, desc=exchange, unit='sym'):
@@ -290,6 +361,14 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
                 continue
             except Exception as e:
                 errors.append(f"{exchange}:{symbol}  [indicator error: {e}]")
+                continue
+
+            if scan_divergence and f'{exchange}:{symbol}' not in holding_set:
+                for dsig in divergence.newly_confirmed(divergence.find_divergences(df), len(df)):
+                    if dsig.div_type in SP500_DIV_TYPES:
+                        sp500_divs.append((exchange, symbol, df, dsig))
+
+            if not scan_patterns:
                 continue
 
             try:
@@ -376,16 +455,7 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
         sigs = divergence.newly_confirmed(divergence.find_divergences(df), len(df))
 
         for sig in sigs:
-            # resolve the pivot bar timestamp if the original datetime is available
-            pivot_ts = None
-            if 'datetime' in df.columns:
-                try:
-                    pivot_ts = pd.Timestamp(df['datetime'].iloc[sig.bar_index])
-                    if pivot_ts.tzinfo is None:
-                        pivot_ts = pivot_ts.tz_localize('UTC')
-                except Exception:
-                    pass
-            pivot_date = pivot_ts.strftime('%Y-%m-%d') if pivot_ts is not None else None
+            pivot_ts, pivot_date = _pivot_time(df, sig)
 
             # ── chart ─────────────────────────────────────────────────────────
             fig = charts.create_divergence_chart(df, sym, exch, sig)
@@ -398,41 +468,7 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
             # ── Telegram ──────────────────────────────────────────────────────
             notification.send_divergence_alert(sym, exch, sig, '1D', png, pivot_date)
 
-            # ── Firebase ──────────────────────────────────────────────────────
-            price_data = {
-                'open':   float(df['Open'].iloc[sig.bar_index]),
-                'high':   float(df['High'].iloc[sig.bar_index]),
-                'low':    float(df['Low'].iloc[sig.bar_index]),
-                'close':  float(df['Close'].iloc[sig.bar_index]),
-                'volume': float(df['Volume'].iloc[sig.bar_index]) if 'Volume' in df.columns else 0.0,
-                'rsi':    float(df['RSI14'].iloc[sig.bar_index]) if 'RSI14' in df.columns else 0.0,
-            }
-            doc_id = db.save_divergence_signal(
-                symbol          = sym,
-                exchange        = exch,
-                signal          = sig,
-                interval        = '1D',
-                price_data      = price_data,
-                pivot_timestamp = pivot_ts,
-            )
-            if doc_id:
-                print(f"  🔥 Divergence Firebase: {doc_id}")
-
-            row = {
-                'date':       today,
-                'exchange':   exch,
-                'symbol':     sym,
-                'div_type':   sig.div_type,
-                'label':      sig.label,
-                'bar_index':  sig.bar_index,
-                'pivot_date': pivot_date or '',
-                'price':      round(sig.price, 4),
-                'p1_rsi':     sig.meta.get('p1_rsi', ''),
-                'p2_rsi':     sig.meta.get('p2_rsi', ''),
-                'reason':     sig.reason,
-                'firebase_id': doc_id or '',
-                'tv_link':    f'https://www.tradingview.com/chart/?symbol={exch}:{sym}&interval=D',
-            }
+            row = _save_divergence(db, df, exch, sym, sig, pivot_ts, pivot_date, today, 'holding')
             div_results.append(row)
             div_alerts.append({'exchange': exch, 'symbol': sym,
                                'label': sig.label, 'reason': sig.reason,
@@ -441,13 +477,26 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
     # send a single batch Telegram summary for all divergences
     notification.send_divergence_batch(div_alerts)
 
+    # ── 3b. S&P 500 classic divergences (collected during the main scan) ──────
+    sp500_alerts: list[dict] = []
+    for exch, sym, df, sig in sp500_divs:
+        pivot_ts, pivot_date = _pivot_time(df, sig)
+        div_results.append(
+            _save_divergence(db, df, exch, sym, sig, pivot_ts, pivot_date, today, 'sp500'))
+        sp500_alerts.append({'exchange': exch, 'symbol': sym,
+                             'label': sig.label, 'reason': sig.reason,
+                             'interval': 'D', 'pivot_date': pivot_date})
+    print(f"\nS&P 500 classic divergences (newly confirmed): {len(sp500_alerts)}")
+    notification.send_divergence_batch(
+        sp500_alerts, title='S&P 500 — Classic RSI Divergences')
+
     # save divergence results to CSV
     if div_results:
         div_path = os.path.join(RESULTS_DIR, f'divergences_{today}.csv')
         pd.DataFrame(div_results).to_csv(div_path, index=False)
         print(f"\n✅  {len(div_results)} divergence(s) saved → {div_path}")
     else:
-        print("\nNo newly confirmed divergences in holding stocks.")
+        print("\nNo newly confirmed divergences.")
 
     # ── 4. save & report ──────────────────────────────────────────────────────
 
