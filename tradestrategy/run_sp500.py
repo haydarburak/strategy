@@ -102,6 +102,38 @@ def _fetch_sp500_set() -> set:
         return set(_SP500_FALLBACK)
 
 
+_NDX_API_URL = 'https://api.nasdaq.com/api/quote/list-type/nasdaq100'
+
+
+def get_nasdaq100_symbols() -> set:
+    """
+    Current NASDAQ-100 constituents. Nasdaq's API is tried first; the
+    TradingView screener index filter is the fallback (it omits a few
+    foreign issuers such as ASML, FER and TRI).
+    """
+    try:
+        r = requests.get(_NDX_API_URL, timeout=20, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'application/json'})
+        r.raise_for_status()
+        symbols = {row['symbol'].strip() for row in r.json()['data']['data']['rows']
+                   if row.get('symbol')}
+        if len(symbols) > 50:
+            print(f"  NASDAQ-100: {len(symbols)} symbols (Nasdaq API)")
+            return symbols
+        raise ValueError(f"only {len(symbols)} symbols returned")
+    except Exception as e:
+        print(f"  Nasdaq API failed ({e}), trying TradingView screener …")
+    try:
+        _, raw = Query().select('name').set_index('SYML:NASDAQ;NDX').limit(500).get_scanner_data()
+        symbols = set(raw['ticker'].str.split(':').str[1])
+        print(f"  NASDAQ-100: {len(symbols)} symbols (TradingView screener)")
+        return symbols
+    except Exception as e:
+        print(f"  NASDAQ-100 list unavailable ({e}) — extra NASDAQ-100 scan skipped.")
+        return set()
+
+
 def get_stock_symbols() -> dict[str, list[str]]:
     """
     Fetch all tradeable stocks across BIST, XETR, NYSE, NASDAQ via the
@@ -231,6 +263,12 @@ def _indicator_data(df: pd.DataFrame, sig: Signal) -> dict:
     }
 
 
+def _classic_divergences(df: pd.DataFrame) -> list:
+    """Newly confirmed divergences of the types reported for the broad universe."""
+    return [s for s in divergence.newly_confirmed(divergence.find_divergences(df), len(df))
+            if s.div_type in SP500_DIV_TYPES]
+
+
 def _pivot_time(df: pd.DataFrame, sig) -> tuple[Optional[pd.Timestamp], Optional[str]]:
     """Timestamp and YYYY-MM-DD date of the divergence's p2 pivot bar."""
     pivot_ts = None
@@ -268,7 +306,7 @@ def _save_divergence(db, df, exch, sym, sig, pivot_ts, pivot_date, today, source
 
     return {
         'date':       today,
-        'source':     source,          # 'holding' | 'sp500'
+        'source':     source,          # 'holding' | 'sp500' | 'nasdaq100'
         'exchange':   exch,
         'symbol':     sym,
         'div_type':   sig.div_type,
@@ -309,7 +347,7 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
 
     all_signals: list[dict] = []
     errors:      list[str]  = []
-    sp500_divs:  list[tuple] = []   # (exchange, symbol, df, sig) — classic divergences only
+    sp500_divs:  list[tuple] = []   # (source, exchange, symbol, df, sig) — classic divergences only
     holding_set = set(HOLDING_STOCKS)   # holdings get their own full divergence scan below
 
     # ── 2. per-exchange: check index, then scan stocks ─────────────────────────
@@ -364,9 +402,8 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
                 continue
 
             if scan_divergence and f'{exchange}:{symbol}' not in holding_set:
-                for dsig in divergence.newly_confirmed(divergence.find_divergences(df), len(df)):
-                    if dsig.div_type in SP500_DIV_TYPES:
-                        sp500_divs.append((exchange, symbol, df, dsig))
+                sp500_divs.extend(('sp500', exchange, symbol, df, dsig)
+                                  for dsig in _classic_divergences(df))
 
             if not scan_patterns:
                 continue
@@ -425,6 +462,26 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
                                      f'?symbol={exchange}:{symbol}&interval=D'),
                 })
 
+    # ── 2b. NASDAQ-100 stocks outside the S&P 500 — divergence only ──────────
+    if not filter_exchange or filter_exchange.upper() == 'NASDAQ':
+        print(f"\n{'─'*55}")
+        already = set(symbols_by_exchange.get('NASDAQ', []))
+        extras  = sorted(sym for sym in get_nasdaq100_symbols() - already
+                         if f'NASDAQ:{sym}' not in holding_set)
+        print(f"NASDAQ-100 outside S&P 500 — {len(extras)} symbols, divergences only …")
+        for sym in tqdm(extras, desc='NDX extra', unit='sym'):
+            df_raw = fetch_ohlcv(sym, 'NASDAQ', n_bars)
+            if df_raw.empty:
+                errors.append(f"NASDAQ:{sym}  [NDX divergence: no data]")
+                continue
+            try:
+                df = add_all(df_raw)
+            except Exception as e:
+                errors.append(f"NASDAQ:{sym}  [NDX divergence indicator error: {e}]")
+                continue
+            sp500_divs.extend(('nasdaq100', 'NASDAQ', sym, df, dsig)
+                              for dsig in _classic_divergences(df))
+
     # ── 3. divergence scan (portfolio watchlist) ──────────────────────────────
     print(f"\n{'─'*55}")
     print(f"Divergence scan — {len(HOLDING_STOCKS)} holding stocks …\n")
@@ -477,18 +534,18 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
     # send a single batch Telegram summary for all divergences
     notification.send_divergence_batch(div_alerts)
 
-    # ── 3b. S&P 500 classic divergences (collected during the main scan) ──────
+    # ── 3b. S&P 500 + NASDAQ-100 classic divergences ─────────────────────────
     sp500_alerts: list[dict] = []
-    for exch, sym, df, sig in sp500_divs:
+    for source, exch, sym, df, sig in sp500_divs:
         pivot_ts, pivot_date = _pivot_time(df, sig)
         div_results.append(
-            _save_divergence(db, df, exch, sym, sig, pivot_ts, pivot_date, today, 'sp500'))
+            _save_divergence(db, df, exch, sym, sig, pivot_ts, pivot_date, today, source))
         sp500_alerts.append({'exchange': exch, 'symbol': sym,
                              'label': sig.label, 'reason': sig.reason,
                              'interval': 'D', 'pivot_date': pivot_date})
-    print(f"\nS&P 500 classic divergences (newly confirmed): {len(sp500_alerts)}")
+    print(f"\nS&P 500 + NASDAQ-100 classic divergences (newly confirmed): {len(sp500_alerts)}")
     notification.send_divergence_batch(
-        sp500_alerts, title='S&P 500 — Classic RSI Divergences')
+        sp500_alerts, title='S&P 500 + NASDAQ-100 — Classic RSI Divergences')
 
     # save divergence results to CSV
     if div_results:
