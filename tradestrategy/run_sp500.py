@@ -371,72 +371,72 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
             errors.append(f"{exch}:{sym}  [divergence indicator error: {e}]")
             continue
 
-        sigs = divergence.find_divergences(df)
-        if not sigs:
-            continue
+        # Only divergences whose p2 pivot was confirmed on the last closed bar.
+        # Older ones were already reported on the night they were confirmed.
+        sigs = divergence.newly_confirmed(divergence.find_divergences(df), len(df))
 
-        # follow main.py: keep only the single most recently detected pivot
-        sig = sigs[-1]
+        for sig in sigs:
+            # resolve the pivot bar timestamp if the original datetime is available
+            pivot_ts = None
+            if 'datetime' in df.columns:
+                try:
+                    pivot_ts = pd.Timestamp(df['datetime'].iloc[sig.bar_index])
+                    if pivot_ts.tzinfo is None:
+                        pivot_ts = pivot_ts.tz_localize('UTC')
+                except Exception:
+                    pass
+            pivot_date = pivot_ts.strftime('%Y-%m-%d') if pivot_ts is not None else None
 
-        # resolve the pivot bar timestamp if the original datetime is available
-        pivot_ts = None
-        if 'datetime' in df.columns:
+            # ── chart ─────────────────────────────────────────────────────────
+            fig = charts.create_divergence_chart(df, sym, exch, sig)
             try:
-                pivot_ts = pd.Timestamp(df['datetime'].iloc[sig.bar_index])
-                if pivot_ts.tzinfo is None:
-                    pivot_ts = pivot_ts.tz_localize('UTC')
-            except Exception:
-                pass
+                png = charts.figure_to_png(fig)
+            except Exception as e:
+                print(f"  ⚠️  Divergence chart failed for {exch}:{sym}: {e}")
+                png = None
 
-        # ── chart ─────────────────────────────────────────────────────────────
-        fig = charts.create_divergence_chart(df, sym, exch, sig)
-        try:
-            png = charts.figure_to_png(fig)
-        except Exception as e:
-            print(f"  ⚠️  Divergence chart failed for {exch}:{sym}: {e}")
-            png = None
+            # ── Telegram ──────────────────────────────────────────────────────
+            notification.send_divergence_alert(sym, exch, sig, '1D', png, pivot_date)
 
-        # ── Telegram ──────────────────────────────────────────────────────────
-        notification.send_divergence_alert(sym, exch, sig, '1D', png)
+            # ── Firebase ──────────────────────────────────────────────────────
+            price_data = {
+                'open':   float(df['Open'].iloc[sig.bar_index]),
+                'high':   float(df['High'].iloc[sig.bar_index]),
+                'low':    float(df['Low'].iloc[sig.bar_index]),
+                'close':  float(df['Close'].iloc[sig.bar_index]),
+                'volume': float(df['Volume'].iloc[sig.bar_index]) if 'Volume' in df.columns else 0.0,
+                'rsi':    float(df['RSI14'].iloc[sig.bar_index]) if 'RSI14' in df.columns else 0.0,
+            }
+            doc_id = db.save_divergence_signal(
+                symbol          = sym,
+                exchange        = exch,
+                signal          = sig,
+                interval        = '1D',
+                price_data      = price_data,
+                pivot_timestamp = pivot_ts,
+            )
+            if doc_id:
+                print(f"  🔥 Divergence Firebase: {doc_id}")
 
-        # ── Firebase ──────────────────────────────────────────────────────────
-        price_data = {
-            'open':   float(df['Open'].iloc[sig.bar_index]),
-            'high':   float(df['High'].iloc[sig.bar_index]),
-            'low':    float(df['Low'].iloc[sig.bar_index]),
-            'close':  float(df['Close'].iloc[sig.bar_index]),
-            'volume': float(df['Volume'].iloc[sig.bar_index]) if 'Volume' in df.columns else 0.0,
-            'rsi':    float(df['RSI14'].iloc[sig.bar_index]) if 'RSI14' in df.columns else 0.0,
-        }
-        doc_id = db.save_divergence_signal(
-            symbol          = sym,
-            exchange        = exch,
-            signal          = sig,
-            interval        = '1D',
-            price_data      = price_data,
-            pivot_timestamp = pivot_ts,
-        )
-        if doc_id:
-            print(f"  🔥 Divergence Firebase: {doc_id}")
-
-        row = {
-            'date':       today,
-            'exchange':   exch,
-            'symbol':     sym,
-            'div_type':   sig.div_type,
-            'label':      sig.label,
-            'bar_index':  sig.bar_index,
-            'price':      round(sig.price, 4),
-            'p1_rsi':     sig.meta.get('p1_rsi', ''),
-            'p2_rsi':     sig.meta.get('p2_rsi', ''),
-            'reason':     sig.reason,
-            'firebase_id': doc_id or '',
-            'tv_link':    f'https://www.tradingview.com/chart/?symbol={exch}:{sym}&interval=D',
-        }
-        div_results.append(row)
-        div_alerts.append({'exchange': exch, 'symbol': sym,
-                           'label': sig.label, 'reason': sig.reason,
-                           'interval': 'D'})
+            row = {
+                'date':       today,
+                'exchange':   exch,
+                'symbol':     sym,
+                'div_type':   sig.div_type,
+                'label':      sig.label,
+                'bar_index':  sig.bar_index,
+                'pivot_date': pivot_date or '',
+                'price':      round(sig.price, 4),
+                'p1_rsi':     sig.meta.get('p1_rsi', ''),
+                'p2_rsi':     sig.meta.get('p2_rsi', ''),
+                'reason':     sig.reason,
+                'firebase_id': doc_id or '',
+                'tv_link':    f'https://www.tradingview.com/chart/?symbol={exch}:{sym}&interval=D',
+            }
+            div_results.append(row)
+            div_alerts.append({'exchange': exch, 'symbol': sym,
+                               'label': sig.label, 'reason': sig.reason,
+                               'interval': 'D', 'pivot_date': pivot_date})
 
     # send a single batch Telegram summary for all divergences
     notification.send_divergence_batch(div_alerts)
@@ -447,7 +447,7 @@ def run(n_bars: int, filter_exchange: Optional[str]) -> None:
         pd.DataFrame(div_results).to_csv(div_path, index=False)
         print(f"\n✅  {len(div_results)} divergence(s) saved → {div_path}")
     else:
-        print("\nNo divergences detected in holding stocks.")
+        print("\nNo newly confirmed divergences in holding stocks.")
 
     # ── 4. save & report ──────────────────────────────────────────────────────
 

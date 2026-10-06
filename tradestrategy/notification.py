@@ -137,6 +137,7 @@ def send_divergence_alert(
     signal: DivergenceSignal,
     interval: str,
     chart_png=None,
+    pivot_date: Optional[str] = None,
 ) -> bool:
     """
     Send a single divergence alert.
@@ -148,6 +149,7 @@ def send_divergence_alert(
     signal     : DivergenceSignal from divergence.find_divergences()
     interval   : timeframe string shown in the TradingView link, e.g. 'D'
     chart_png  : optional BytesIO of pre-rendered PNG chart
+    pivot_date : date of the p2 pivot bar, e.g. '2026-09-23'
 
     Returns
     -------
@@ -174,7 +176,8 @@ def send_divergence_alert(
         f'{type_emoji} <b>{signal.label}</b>\n'
         f'Symbol : <code>{exchange}:{symbol}</code>\n'
         f'Close  : <code>{signal.price:.4f}</code>\n'
-        f'{rsi_meta}\n'
+        + (f'Pivot  : <code>{pivot_date}</code> (confirmed on last close)\n' if pivot_date else '')
+        + f'{rsi_meta}\n'
         f'─────────────────────\n'
         f'{signal.reason}\n'
         f'─────────────────────\n'
@@ -191,9 +194,12 @@ def send_divergence_batch(alerts: list[dict]) -> bool:
     Send a summary message listing all divergences found in the current scan.
 
     Each entry in `alerts` must have keys:
-        exchange, symbol, label, reason, interval
+        exchange, symbol, label, reason, interval  (optional: pivot_date)
 
-    Returns True if the message was sent successfully.
+    Long summaries are split into several messages so each stays under
+    Telegram's 4096-character limit.
+
+    Returns True if every message was sent successfully.
     """
     if not alerts:
         return False
@@ -202,19 +208,39 @@ def send_divergence_batch(alerts: list[dict]) -> bool:
     if token is None:
         return False
 
-    lines = ['📋 <b>RSI Divergence Scan — Summary</b>\n']
+    header  = '📋 <b>RSI Divergence Scan — Summary</b>\n'
+    entries = []
     for a in alerts:
         tv_link = (
             f'https://www.tradingview.com/chart/'
             f'?symbol={a["exchange"]}:{a["symbol"]}&interval={a["interval"]}'
         )
-        lines.append(
-            f'• <code>{a["exchange"]}:{a["symbol"]}</code> — {a["label"]}\n'
+        pivot = f' (pivot {a["pivot_date"]})' if a.get('pivot_date') else ''
+        entries.append(
+            f'• <code>{a["exchange"]}:{a["symbol"]}</code> — {a["label"]}{pivot}\n'
             f'  {a["reason"]}\n'
             f'  <a href="{tv_link}">chart</a>'
         )
 
-    return _post_message(token, chat_ids, '\n'.join(lines))
+    ok = True
+    for chunk in _chunk_lines(entries, header):
+        ok &= _post_message(token, chat_ids, chunk)
+    return ok
+
+
+_TELEGRAM_SAFE_LEN = 3800   # below the 4096 limit, with room for HTML markup
+
+
+def _chunk_lines(entries: list[str], header: str) -> list[str]:
+    """Join entries under `header`, starting a new message before the limit."""
+    chunks, current = [], header
+    for entry in entries:
+        if len(current) + len(entry) + 1 > _TELEGRAM_SAFE_LEN and current != header:
+            chunks.append(current)
+            current = header
+        current += '\n' + entry
+    chunks.append(current)
+    return chunks
 
 
 def send_index_status(

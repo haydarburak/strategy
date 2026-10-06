@@ -19,9 +19,9 @@ Usage
 
     df  = add_all(raw_ohlcv)            # must have RSI14 column
     sigs = find_divergences(df)         # list[DivergenceSignal], most recent last
-    if sigs:
-        latest = sigs[-1]
-        print(latest.label, latest.reason)
+    new  = newly_confirmed(sigs, len(df))   # only pivots confirmed on the last bar
+    for s in new:
+        print(s.label, s.reason)
 """
 
 from __future__ import annotations
@@ -213,6 +213,24 @@ def find_divergences(
             ))
 
     return sorted(signals, key=lambda s: s.bar_index)
+
+
+def newly_confirmed(
+    signals: List[DivergenceSignal],
+    n_rows: int,
+    right: int = 5,
+    max_age: int = 1,
+) -> List[DivergenceSignal]:
+    """
+    Keep only divergences whose p2 pivot was confirmed on one of the last
+    `max_age` closed bars. A pivot at bar p is confirmed `right` bars later
+    (p + right), so with max_age=1 each divergence is returned exactly once —
+    on the scan that runs after its confirming bar closes.
+
+    `right` must match the value passed to find_divergences().
+    """
+    first_ok = n_rows - right - max_age
+    return [s for s in signals if first_ok <= s.bar_index <= n_rows - 1 - right]
 
 
 def most_recent(df: pd.DataFrame, **kwargs) -> DivergenceSignal | None:
